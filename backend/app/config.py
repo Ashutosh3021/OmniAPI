@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    encryption_key: str = Field(
+        ...,
+        description="Fernet key (32-byte base64) for encrypting external API credentials",
+    )
 
     # CORS
     allowed_origins: str = "http://localhost:3000,http://localhost:8000"

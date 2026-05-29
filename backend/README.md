@@ -125,6 +125,39 @@ backend/
 
 API keys are prefixed with `omni_`. The raw key is returned only on creation. Use `Authorization: Bearer <access_token>` or `X-API-Key: omni_...` for protected routes (via `require_auth` / `require_api_key` dependencies).
 
+## Orchestration (Phase 3)
+
+Generate a Fernet encryption key for external API credentials:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Add it to `.env.local` as `ENCRYPTION_KEY`.
+
+| Method | Path | Auth |
+|--------|------|------|
+| `POST` | `/api/v1/external-services` | JWT |
+| `GET` | `/api/v1/external-services` | JWT |
+| `GET` | `/api/v1/external-services/{service_id}` | JWT |
+| `PATCH` | `/api/v1/external-services/{service_id}` | JWT |
+| `DELETE` | `/api/v1/external-services/{service_id}` | JWT |
+| `POST` | `/api/v1/orchestrate` | JWT or `X-API-Key` |
+
+Supported services: `weather` (OpenWeatherMap), `news` (NewsAPI), `stock` (Alpha Vantage).
+
+Example orchestrate request:
+
+```json
+{
+  "services": ["weather", "news"],
+  "params": {
+    "weather": {"city": "London"},
+    "news": {"query": "artificial intelligence", "language": "en"}
+  }
+}
+```
+
 ## Testing
 
 ```bash

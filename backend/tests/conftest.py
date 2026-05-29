@@ -18,6 +18,10 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
 os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost:3000")
 os.environ.setdefault("REFRESH_TOKEN_EXPIRE_DAYS", "7")
 
+from cryptography.fernet import Fernet
+
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
+
 from app.config import get_settings
 from app.db.base import Base
 from app.db.session import get_db

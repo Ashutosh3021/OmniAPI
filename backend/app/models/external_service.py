@@ -59,6 +59,11 @@ class ExternalService(Base):
         "UsageLog", back_populates="service", cascade="all, delete-orphan"
     )
 
+    @property
+    def service_id(self) -> int:
+        """Alias for id used in API responses."""
+        return self.id
+
     def __repr__(self) -> str:
         return (
             f"<ExternalService(id={self.id}, user_id={self.user_id}, "
