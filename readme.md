@@ -59,35 +59,40 @@ A SaaS product needs weather + news + stock data. Without OmniAPI:
 
 ```mermaid
 graph TB
-    subgraph "Client Layer"
+    %% Client layer
+    subgraph Client_Layer
         WEB["🌐 Web Dashboard"]
         API_CLIENT["📱 User Applications"]
     end
 
-    subgraph "OmniAPI Platform"
-        AUTH["🔐 Auth Layer<br/>JWT + OAuth2"]
-        RATE["⏱️ Rate Limiter<br/>Redis"]
-        CACHE["💾 Cache Layer<br/>Redis TTL"]
-        QUEUE["📦 Job Queue<br/>Celery"]
-        ORCHESTRATOR["🎯 API Orchestrator<br/>FastAPI"]
+    %% OmniAPI platform
+    subgraph OmniAPI_Platform
+        AUTH["🔐 Auth Layer\nJWT + OAuth2"]
+        RATE["⏱️ Rate Limiter\nRedis"]
+        CACHE["💾 Cache Layer\nRedis TTL"]
+        QUEUE["📦 Job Queue\nCelery"]
+        ORCHESTRATOR["🎯 API Orchestrator\nFastAPI"]
         WEBHOOK["🔔 Webhook Manager"]
         ANALYTICS["📊 Analytics Engine"]
     end
 
-    subgraph "Data Layer"
-        DB["🗄️ PostgreSQL<br/>Multi-Tenant DB"]
-        REDIS["⚡ Redis<br/>Cache & Pub/Sub"]
+    %% Data layer
+    subgraph Data_Layer
+        DB["🗄️ PostgreSQL\nMulti-Tenant DB"]
+        REDIS["⚡ Redis\nCache & Pub/Sub"]
     end
 
-    subgraph "External APIs"
+    %% External APIs
+    subgraph External_APIs
         WEATHER["🌤️ OpenWeatherMap"]
         NEWS["📰 NewsAPI"]
         STOCK["📈 StockAPI"]
     end
 
-    subgraph "Deployment"
+    %% Deployment
+    subgraph Deployment
         DOCKER["🐳 Docker Compose"]
-        CI["🔄 GitHub Actions<br/>CI/CD"]
+        CI["🔄 GitHub Actions\nCI/CD"]
         RAILWAY["☁️ Railway/Render"]
     end
 
