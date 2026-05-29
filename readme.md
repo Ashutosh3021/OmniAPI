@@ -14,7 +14,7 @@
 ![Celery](https://img.shields.io/badge/Celery-5.3+-37B24D?style=flat-square&logo=celery)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Under%20Development-brightgreen?style=flat-square)
 
 ---
 
