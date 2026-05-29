@@ -70,5 +70,16 @@ class User(Base):
         "WebhookEvent", back_populates="user", cascade="all, delete-orphan"
     )
 
+    @property
+    def user_id(self) -> int:
+        """Alias for id used in JWT claims and tenant scoping."""
+        return self.id
+
+    @property
+    def full_name(self) -> str:
+        """Display name from first and last name fields."""
+        parts = [self.first_name, self.last_name]
+        return " ".join(part for part in parts if part)
+
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email!r}, tier={self.tier})>"

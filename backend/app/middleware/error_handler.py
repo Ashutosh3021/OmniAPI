@@ -7,22 +7,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.utils.exceptions import OmniAPIException
-
 logger = logging.getLogger(__name__)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register global exception handlers on the FastAPI application."""
-
-    @app.exception_handler(OmniAPIException)
-    async def omniapi_exception_handler(
-        request: Request, exc: OmniAPIException
-    ) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.message, "type": exc.__class__.__name__},
-        )
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
@@ -30,7 +19,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors(), "type": "ValidationError"},
+            content={"detail": exc.errors()},
         )
 
     @app.exception_handler(SQLAlchemyError)
@@ -40,7 +29,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception("Database error on %s", request.url.path)
         return JSONResponse(
             status_code=503,
-            content={"detail": "Database service unavailable", "type": "DatabaseError"},
+            content={"detail": "Database service unavailable"},
         )
 
     @app.exception_handler(Exception)
@@ -48,5 +37,5 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception("Unhandled error on %s", request.url.path)
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal server error", "type": "InternalError"},
+            content={"detail": "Internal server error"},
         )

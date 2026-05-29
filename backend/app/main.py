@@ -37,9 +37,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Phase 2: allow all origins; restrict in Phase 6
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

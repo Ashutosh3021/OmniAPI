@@ -111,6 +111,20 @@ backend/
 | `webhooks` | Outbound webhook subscriptions |
 | `webhook_events` | Delivery queue and history |
 
+## Authentication (Phase 2)
+
+| Method | Path | Auth |
+|--------|------|------|
+| `POST` | `/api/v1/auth/register` | Public |
+| `POST` | `/api/v1/auth/login` | Public |
+| `POST` | `/api/v1/auth/refresh` | Public |
+| `GET` | `/api/v1/auth/me` | JWT |
+| `POST` | `/api/v1/api-keys` | JWT |
+| `GET` | `/api/v1/api-keys` | JWT |
+| `DELETE` | `/api/v1/api-keys/{key_id}` | JWT |
+
+API keys are prefixed with `omni_`. The raw key is returned only on creation. Use `Authorization: Bearer <access_token>` or `X-API-Key: omni_...` for protected routes (via `require_auth` / `require_api_key` dependencies).
+
 ## Testing
 
 ```bash

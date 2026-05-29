@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(..., min_length=16)
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
 
     # CORS
     allowed_origins: str = "http://localhost:3000,http://localhost:8000"
@@ -57,6 +58,9 @@ class Settings(BaseSettings):
 
         normalized = value.replace("postgresql+psycopg2://", "postgresql://")
         parsed = urlparse(normalized)
+
+        if parsed.scheme == "sqlite":
+            return value
 
         if parsed.scheme not in ("postgresql", "postgres"):
             raise ValueError(
@@ -73,6 +77,8 @@ class Settings(BaseSettings):
     def sqlalchemy_database_url(self) -> str:
         """Connection URL for SQLAlchemy with psycopg2 driver."""
         url = self.database_url
+        if url.startswith("sqlite"):
+            return url
         if url.startswith("postgresql://"):
             return url.replace("postgresql://", "postgresql+psycopg2://", 1)
         if url.startswith("postgres://"):
@@ -91,12 +97,16 @@ class Settings(BaseSettings):
     @property
     def sqlalchemy_engine_kwargs(self) -> dict:
         """SQLAlchemy engine options including connection pooling."""
-        return {
-            "echo": self.db_echo,
-            "pool_pre_ping": True,
-            "pool_size": 10,
-            "max_overflow": 20,
-        }
+        kwargs: dict = {"echo": self.db_echo}
+        if not self.database_url.startswith("sqlite"):
+            kwargs.update(
+                {
+                    "pool_pre_ping": True,
+                    "pool_size": 10,
+                    "max_overflow": 20,
+                }
+            )
+        return kwargs
 
 
 @lru_cache
