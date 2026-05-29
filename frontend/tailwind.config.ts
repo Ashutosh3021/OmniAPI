@@ -1,0 +1,77 @@
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  darkMode: "class",
+  content: [
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        "on-surface": "#111c2d",
+        "on-surface-variant": "#45464d",
+        "on-primary-container": "#7c839b",
+        "primary-container": "#131b2e",
+        "on-primary-fixed-variant": "#0F172A",
+        surface: "#f9f9ff",
+        "surface-container-low": "#f0f3ff",
+        "surface-container-lowest": "#ffffff",
+        "surface-container-high": "#dee8ff",
+        "surface-variant": "#d8e3fb",
+        background: "#F8FAFC",
+        outline: "#94A3B8",
+        "outline-variant": "#c6c6cd",
+        secondary: "#00687a",
+        "secondary-fixed": "#06B6D4",
+        "secondary-fixed-dim": "#0891b2",
+        "tertiary-fixed-dim": "#4edea3",
+        "on-tertiary-fixed-variant": "#005236",
+        "error-container": "#ffdad6",
+        "on-error-container": "#93000a",
+        error: "#ba1a1a",
+        "vibrant-cyan": "#06B6D4",
+        "vibrant-cyan-hover": "#0891b2",
+        "light-gray": "#94A3B8",
+        "dark-gray": "#334155",
+        primary: "#000000",
+      },
+      spacing: {
+        xxl: "48px",
+        gutter: "24px",
+        lg: "24px",
+        "margin-mobile": "16px",
+        "margin-desktop": "32px",
+        xs: "4px",
+        sm: "8px",
+        xl: "32px",
+        md: "16px",
+      },
+      fontFamily: {
+        sans: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "monospace"],
+      },
+      fontSize: {
+        "label-md": ["14px", { lineHeight: "1.4", fontWeight: "500" }],
+        "body-md": ["16px", { lineHeight: "1.5", fontWeight: "400" }],
+        "body-sm": ["14px", { lineHeight: "1.5", fontWeight: "400" }],
+        "headline-lg": ["32px", { lineHeight: "1.2", fontWeight: "600" }],
+        "headline-md": ["24px", { lineHeight: "1.3", fontWeight: "600" }],
+        "headline-sm": ["20px", { lineHeight: "1.4", fontWeight: "600" }],
+        "headline-lg-mobile": ["24px", { lineHeight: "1.2", fontWeight: "600" }],
+        display: ["48px", { lineHeight: "1.1", fontWeight: "700" }],
+        code: ["14px", { lineHeight: "1.6", fontWeight: "400" }],
+        "label-sm": ["12px", { lineHeight: "1.4", fontWeight: "500" }],
+      },
+      borderRadius: {
+        DEFAULT: "0.125rem",
+        lg: "0.25rem",
+        xl: "0.5rem",
+      },
+    },
+  },
+  plugins: [],
+};
+
+export default config;
