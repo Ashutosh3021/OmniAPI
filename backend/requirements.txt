@@ -11,7 +11,8 @@ alembic==1.13.1
 
 # Caching & Async
 redis[hiredis]==5.0.1
-celery[redis]==5.3.4
+# Plain celery (not celery[redis]): the [redis] extra pins redis<5, which conflicts with redis 5.x above
+celery==5.3.4
 
 # Utilities
 python-dotenv==1.0.0
