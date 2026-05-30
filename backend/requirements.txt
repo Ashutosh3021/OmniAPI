@@ -8,7 +8,6 @@ pydantic-settings==2.1.0
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
 alembic==1.13.1
-supabase==2.3.5
 
 # Caching & Async
 redis[hiredis]==5.0.1
@@ -28,7 +27,7 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
 pytest-mock==3.12.0
-pytest-httpx==0.28.0
+pytest-httpx==0.25.0
 fakeredis[lua]==2.21.1
 httpx==0.25.2
 
