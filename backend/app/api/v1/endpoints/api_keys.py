@@ -10,6 +10,7 @@ from app.models.api_key import APIKey
 from app.models.user import User
 from app.schemas.api_key import APIKeyCreate, APIKeyCreatedResponse, APIKeyResponse
 from app.services import api_key_service
+from app.services.webhook_service import WebhookService
 from app.utils.decorators import require_auth
 from app.utils.exceptions import ResourceNotFoundError
 
@@ -47,6 +48,12 @@ def create_api_key(
     db.add(api_key)
     db.commit()
     db.refresh(api_key)
+
+    WebhookService(db).dispatch_event(
+        tenant_id=str(current_user.id),
+        event_type="api_key.created",
+        data={"key_id": api_key.id, "name": api_key.name},
+    )
 
     response = _to_response(api_key)
     return APIKeyCreatedResponse(**response.model_dump(), raw_key=raw_key)

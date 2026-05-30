@@ -23,10 +23,10 @@ class UsageLog(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    service_id: Mapped[int] = mapped_column(
+    service_id: Mapped[Optional[int]] = mapped_column(
         Integer,
-        ForeignKey("external_services.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("external_services.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -41,7 +41,7 @@ class UsageLog(Base):
     error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="usage_logs")
-    service: Mapped["ExternalService"] = relationship(
+    service: Mapped[Optional["ExternalService"]] = relationship(
         "ExternalService", back_populates="usage_logs"
     )
 

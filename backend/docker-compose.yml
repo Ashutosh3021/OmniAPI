@@ -1,4 +1,4 @@
-# Redis for caching and Celery (Supabase hosts PostgreSQL separately)
+# Redis + Celery worker (PostgreSQL via Supabase)
 services:
   redis:
     image: redis:7-alpine
@@ -14,9 +14,38 @@ services:
       retries: 3
     restart: unless-stopped
 
+  celery_worker:
+    build: .
+    container_name: omniapi-celery
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+    env_file:
+      - .env.local
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery_beat:
+    build: .
+    container_name: omniapi-celery-beat
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    env_file:
+      - .env.local
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   api:
     build: .
     container_name: omniapi-api
+    command: sh -c "alembic -c app/db/alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     env_file:
@@ -27,6 +56,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      celery_worker:
+        condition: service_started
     restart: unless-stopped
     profiles:
       - full

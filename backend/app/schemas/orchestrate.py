@@ -2,7 +2,7 @@
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class OrchestrateRequest(BaseModel):
@@ -10,6 +10,16 @@ class OrchestrateRequest(BaseModel):
 
     services: list[str] = Field(..., min_length=1)
     params: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def params_keys_match_services(self) -> "OrchestrateRequest":
+        """Reject param keys that do not correspond to a requested service."""
+        extra = set(self.params.keys()) - set(self.services)
+        if extra:
+            raise ValueError(
+                f"params contains keys not listed in services: {', '.join(sorted(extra))}"
+            )
+        return self
 
 
 class ServiceResult(BaseModel):

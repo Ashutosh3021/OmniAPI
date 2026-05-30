@@ -33,7 +33,21 @@ def test_list_api_keys_hides_raw_key(client, auth_headers) -> None:
     assert raw_key not in str(keys)
 
 
-def test_delete_soft_deletes_key(client, auth_headers) -> None:
+def test_use_deleted_api_key(client, auth_headers) -> None:
+    create = client.post(
+        "/api/v1/api-keys",
+        headers=auth_headers,
+        json={"name": "Revoked Key"},
+    )
+    raw_key = create.json()["raw_key"]
+    key_id = create.json()["key_id"]
+    client.delete(f"/api/v1/api-keys/{key_id}", headers=auth_headers)
+
+    response = client.get("/api/v1/auth/me", headers={"X-API-Key": raw_key})
+    assert response.status_code == 401
+
+
+def test_delete_api_key(client, auth_headers) -> None:
     create = client.post(
         "/api/v1/api-keys",
         headers=auth_headers,

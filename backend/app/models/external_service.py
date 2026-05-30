@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -26,6 +26,9 @@ class ExternalService(Base):
     """User-configured external API (e.g. OpenWeatherMap, NewsAPI)."""
 
     __tablename__ = "external_services"
+    __table_args__ = (
+        UniqueConstraint("user_id", "service_name", name="uq_external_services_user_id_service_name"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(
@@ -56,7 +59,7 @@ class ExternalService(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="external_services")
     usage_logs: Mapped[List["UsageLog"]] = relationship(
-        "UsageLog", back_populates="service", cascade="all, delete-orphan"
+        "UsageLog", back_populates="service", passive_deletes=True
     )
 
     @property

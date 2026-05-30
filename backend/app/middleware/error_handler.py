@@ -3,6 +3,7 @@
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -19,7 +20,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors()},
+            content={"detail": jsonable_encoder(exc.errors())},
         )
 
     @app.exception_handler(SQLAlchemyError)

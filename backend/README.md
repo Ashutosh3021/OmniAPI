@@ -158,6 +158,56 @@ Example orchestrate request:
 }
 ```
 
+## Testing & deployment (Phase 6)
+
+```bash
+cd backend
+pip install -r requirements.txt
+pytest --cov=app --cov-fail-under=80
+```
+
+- **62 tests**, offline by default (SQLite + fakeredis mocks)
+- CI: `.github/workflows/ci.yml` (PostgreSQL 15 + Redis 7 on push to `main`/`develop`)
+- Production Docker: `docker-compose.prod.yml` + `nginx.conf`
+- Deploy guide: [`DeploymentGuide.md`](../DeploymentGuide.md) (Render backend + Vercel frontend)
+
+## Observability (Phase 5)
+
+| Method | Path | Auth |
+|--------|------|------|
+| `POST/GET/PATCH/DELETE` | `/api/v1/webhooks` | JWT |
+| `POST` | `/api/v1/webhooks/{id}/test` | JWT |
+| `GET` | `/api/v1/analytics/usage?period=last_24h` | JWT |
+| `GET` | `/api/v1/analytics/reports` | JWT (CSV download) |
+
+Webhook event types: `orchestrate.complete`, `orchestrate.failed`, `api_key.created` (HTTPS URLs only).
+
+Start Celery Beat for hourly stats snapshots:
+
+```bash
+docker compose up -d redis celery_worker celery_beat
+```
+
+## Performance layer (Phase 4)
+
+Start Redis and the Celery worker:
+
+```bash
+docker compose up -d redis celery_worker
+```
+
+Run the API locally (separate terminal):
+
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+Features:
+- **Redis cache** — per-service TTLs (`weather` 1h, `news` 30m, `stock` 5m); `cache_hit` on repeat requests
+- **Rate limiting** — sliding window per tenant/API key; tier limits: free 100/hr, pro 1000/hr, enterprise 10000/hr
+- **Celery workers** — external API calls run in parallel via `call_weather_api`, `call_news_api`, `call_stock_api` tasks
+- **Headers** on `POST /orchestrate`: `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
 ## Testing
 
 ```bash

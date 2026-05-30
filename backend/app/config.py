@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
 
+    # Rate limiting (requests per hour)
+    rate_limit_free: int = 100
+    rate_limit_pro: int = 1000
+    rate_limit_enterprise: int = 10000
+
+    # Celery
+    celery_task_timeout: int = 10
+
     # Security
     secret_key: str = Field(..., min_length=16)
     algorithm: str = "HS256"

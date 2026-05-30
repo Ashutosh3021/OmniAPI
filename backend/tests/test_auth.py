@@ -5,7 +5,7 @@ from jose import jwt
 from app.config import get_settings
 
 
-def test_register_creates_user(client) -> None:
+def test_register_success(client) -> None:
     response = client.post(
         "/api/v1/auth/register",
         json={
@@ -22,7 +22,7 @@ def test_register_creates_user(client) -> None:
     assert "user_id" in data
 
 
-def test_register_duplicate_email_returns_400(client) -> None:
+def test_register_duplicate_email(client) -> None:
     payload = {
         "email": "dup@example.com",
         "password": "password123",
@@ -34,7 +34,19 @@ def test_register_duplicate_email_returns_400(client) -> None:
     assert "already" in response.json()["detail"].lower()
 
 
-def test_login_returns_tokens(client) -> None:
+def test_register_weak_password(client) -> None:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "weak@example.com",
+            "password": "short",
+            "full_name": "Weak User",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_login_success(client) -> None:
     client.post(
         "/api/v1/auth/register",
         json={
@@ -54,7 +66,7 @@ def test_login_returns_tokens(client) -> None:
     assert data["refresh_token"]
 
 
-def test_login_wrong_password_returns_401(client) -> None:
+def test_login_wrong_password(client) -> None:
     client.post(
         "/api/v1/auth/register",
         json={
@@ -70,7 +82,15 @@ def test_login_wrong_password_returns_401(client) -> None:
     assert response.status_code == 401
 
 
-def test_refresh_returns_new_tokens(client) -> None:
+def test_login_nonexistent_user(client) -> None:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "nobody@example.com", "password": "password123"},
+    )
+    assert response.status_code == 401
+
+
+def test_refresh_token_success(client) -> None:
     client.post(
         "/api/v1/auth/register",
         json={
@@ -103,18 +123,18 @@ def test_refresh_with_access_token_returns_401(client, auth_headers) -> None:
     assert response.status_code == 401
 
 
-def test_me_returns_current_user(client, auth_headers) -> None:
+def test_get_me_authenticated(client, auth_headers) -> None:
     response = client.get("/api/v1/auth/me", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["email"] == "user@example.com"
 
 
-def test_me_without_token_returns_401(client) -> None:
+def test_get_me_no_token(client) -> None:
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401
 
 
-def test_tampered_token_returns_401(client) -> None:
+def test_get_me_tampered_token(client) -> None:
     response = client.get(
         "/api/v1/auth/me",
         headers={"Authorization": "Bearer invalid.token.here"},

@@ -24,6 +24,7 @@ class Webhook(Base):
     )
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
+    secret_encrypted: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     max_retries: Mapped[int] = mapped_column(Integer, nullable=False, server_default="5")
@@ -41,6 +42,11 @@ class Webhook(Base):
     events: Mapped[List["WebhookEvent"]] = relationship(
         "WebhookEvent", back_populates="webhook", cascade="all, delete-orphan"
     )
+
+    @property
+    def webhook_id(self) -> int:
+        """Alias for id used in API responses."""
+        return self.id
 
     def __repr__(self) -> str:
         return (

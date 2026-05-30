@@ -1,11 +1,12 @@
 """JWT authentication dependency."""
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.middleware.rate_limit import apply_rate_limit
 from app.models.user import User
 from app.services import auth_service
 from app.utils.exceptions import AuthenticationError, AuthorizationError
@@ -14,11 +15,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
 async def get_current_user(
+    request: Request,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """
-    Decode JWT, load user from database, enforce active status.
+    Decode JWT, load user from database, enforce active status and rate limits.
 
     Raises 401 for invalid tokens or missing users; 403 for inactive users.
     """
@@ -43,4 +45,5 @@ async def get_current_user(
     if not user.is_active:
         raise AuthorizationError("User account is inactive")
 
+    await apply_rate_limit(request, user, api_key_id="jwt")
     return user
