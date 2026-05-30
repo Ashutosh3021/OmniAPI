@@ -20,16 +20,20 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ---
 
-## Supabase database setup
+## Supabase database setup (primary database)
+
+Full walkthrough: **[supabase/README.md](supabase/README.md)**
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. In **Project Settings → Database**, copy the **Connection string** (URI mode, `postgresql://...`).
-3. Set `DATABASE_URL` in `backend/.env.local` to that value (use the **Session pooler** or direct connection as appropriate).
-4. Apply schema using **one** of:
+2. **Settings → Database → Connection string (URI)**:
+   - **`DATABASE_URL` in `.env.local`:** Session **pooler** (port `6543`) for the API.
+   - **Alembic migrations:** **Direct** connection (port `5432`)—run once, then use the pooler for the app.
+3. Apply schema with **one** method only:
    - **Alembic (recommended):** `cd backend && alembic -c app/db/alembic.ini upgrade head`
-   - **SQL file:** paste or run `supabase/schema.sql` in the Supabase SQL Editor
+   - **SQL:** run [`supabase/schema.sql`](supabase/schema.sql) in the SQL Editor, then `alembic stamp head`
+4. Keep **Redis** on Docker locally or Upstash in production (not provided by Supabase).
 
-`backend/app/config.py` validates `DATABASE_URL` as PostgreSQL/Supabase. Redis and Celery still run outside Supabase (Docker locally or Upstash in production).
+CI still uses GitHub’s Postgres service so tests never hit your Supabase project.
 
 ---
 

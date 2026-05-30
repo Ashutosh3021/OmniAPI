@@ -10,19 +10,26 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "003"
 down_revision: Union[str, None] = "002"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-external_service_status = sa.Enum(
-    "active", "inactive", "error", name="external_service_status"
+external_service_status = postgresql.ENUM(
+    "active",
+    "inactive",
+    "error",
+    name="external_service_status",
+    create_type=False,
 )
 
 
 def upgrade() -> None:
-    external_service_status.create(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(
+        "active", "inactive", "error", name="external_service_status"
+    ).create(op.get_bind(), checkfirst=True)
     op.create_table(
         "external_services",
         sa.Column("id", sa.Integer(), nullable=False),

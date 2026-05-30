@@ -10,19 +10,26 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "006"
 down_revision: Union[str, None] = "005"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-webhook_event_status = sa.Enum(
-    "pending", "delivered", "failed", name="webhook_event_status"
+webhook_event_status = postgresql.ENUM(
+    "pending",
+    "delivered",
+    "failed",
+    name="webhook_event_status",
+    create_type=False,
 )
 
 
 def upgrade() -> None:
-    webhook_event_status.create(op.get_bind(), checkfirst=True)
+    postgresql.ENUM(
+        "pending", "delivered", "failed", name="webhook_event_status"
+    ).create(op.get_bind(), checkfirst=True)
     op.create_table(
         "webhook_events",
         sa.Column("id", sa.Integer(), nullable=False),

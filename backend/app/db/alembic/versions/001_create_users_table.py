@@ -10,17 +10,22 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "001"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-user_tier = sa.Enum("free", "pro", "enterprise", name="user_tier")
+user_tier = postgresql.ENUM(
+    "free", "pro", "enterprise", name="user_tier", create_type=False
+)
 
 
 def upgrade() -> None:
-    user_tier.create(op.get_bind(), checkfirst=True)
+    postgresql.ENUM("free", "pro", "enterprise", name="user_tier").create(
+        op.get_bind(), checkfirst=True
+    )
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), nullable=False),
