@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: omniapi-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "False"
+      - key: LOG_LEVEL
+        value: warning
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: DATABASE_URL
+        sync: false   # Set manually in Render dashboard - contains secrets
+      - key: REDIS_URL
+        sync: false   # Set manually in Render dashboard - contains secrets
+      - key: SECRET_KEY
+        sync: false   # Set manually in Render dashboard - contains secrets
+      - key: ENCRYPTION_KEY
+        sync: false   # Set manually in Render dashboard - contains secrets
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+      - key: CELERY_TASK_TIMEOUT
+        value: "30"
+      - key: RATE_LIMIT_FREE
+        value: "100"
+      - key: RATE_LIMIT_PRO
+        value: "1000"
+      - key: RATE_LIMIT_ENTERPRISE
+        value: "10000"
+      - key: ALLOWED_ORIGINS
+        sync: false   # Set manually - your Vercel URL
