@@ -59,7 +59,15 @@ class Settings(BaseSettings):
     )
 
     # CORS
-    allowed_origins: str = "http://localhost:3000,http://localhost:8000"
+    allowed_origins: str = "http://localhost:3000"
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: str, info) -> str:
+        """Prevent wildcard CORS in production."""
+        if info.data.get("environment") == "production" and "*" in value:
+            raise ValueError("Wildcard CORS (*) is not allowed in production")
+        return value
 
     @field_validator("database_url")
     @classmethod

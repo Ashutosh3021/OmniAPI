@@ -16,7 +16,7 @@ class HealthChecks(BaseModel):
 class HealthResponse(BaseModel):
     """Service health status returned by GET /health."""
 
-    status: Literal["healthy", "degraded"] = Field(
+    status: Literal["healthy", "degraded", "unhealthy"] = Field(
         ..., description="Overall service health"
     )
     checks: HealthChecks

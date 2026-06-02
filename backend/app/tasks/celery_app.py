@@ -26,6 +26,12 @@ celery_app.conf.update(
     result_expires=3600,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
+    # Retry broker connection on startup (suppresses CPendingDeprecationWarning in Celery 5.x)
+    broker_connection_retry_on_startup=True,
+    # Use solo pool on Windows — prefork uses POSIX semaphores which are
+    # not supported on Windows and cause WinError 5 (Access Denied).
+    # solo runs tasks in the main process; fine for development.
+    worker_pool="solo",
     beat_schedule={
         "compute-hourly-stats": {
             "task": "tasks.compute_hourly_stats",

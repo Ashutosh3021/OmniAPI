@@ -16,14 +16,17 @@ from app.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["health"])
 
+# Dependencies that must be healthy for the service to be considered available.
+CRITICAL_CHECKS = {"database"}
+
 
 async def _check_redis(redis_url: str) -> str:
     client = aioredis.from_url(redis_url, decode_responses=True)
     try:
         await client.ping()
         return "ok"
-    except Exception:
-        logger.exception("Redis health check failed")
+    except Exception as exc:
+        logger.warning("Redis health check failed: %s", exc)
         return "unreachable"
     finally:
         await client.aclose()
@@ -36,14 +39,21 @@ def _check_celery() -> str:
         if active:
             return "ok"
         return "no_workers"
-    except Exception:
-        logger.exception("Celery health check failed")
+    except Exception as exc:
+        logger.warning("Celery health check failed: %s", exc)
         return "unreachable"
 
 
 @router.get("/health")
 async def health_check(db: Session = Depends(get_db)) -> JSONResponse:
-    """Return service health including database, Redis, and Celery worker status."""
+    """Return service health including database, Redis, and Celery worker status.
+
+    HTTP 200 is returned when all *critical* dependencies (database) are healthy.
+    Non-critical dependencies (Redis, Celery) being unavailable results in a
+    ``degraded`` status but still returns HTTP 200 so load-balancer health probes
+    do not take the service out of rotation when background workers are offline.
+    HTTP 503 is only returned when a critical dependency is unreachable.
+    """
     settings = get_settings()
     checks: dict[str, str] = {}
 
@@ -57,8 +67,18 @@ async def health_check(db: Session = Depends(get_db)) -> JSONResponse:
     checks["redis"] = await _check_redis(settings.redis_url)
     checks["celery"] = _check_celery()
 
-    overall = "healthy" if all(v == "ok" for v in checks.values()) else "degraded"
-    status_code = 200 if overall == "healthy" else 503
+    critical_ok = all(checks.get(k) == "ok" for k in CRITICAL_CHECKS)
+    all_ok = all(v == "ok" for v in checks.values())
+
+    if all_ok:
+        overall = "healthy"
+    elif critical_ok:
+        overall = "degraded"
+    else:
+        overall = "unhealthy"
+
+    # 503 only when a critical dependency is down
+    status_code = 503 if not critical_ok else 200
 
     body = HealthResponse(
         status=overall,

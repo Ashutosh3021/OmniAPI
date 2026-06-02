@@ -39,6 +39,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             )}
             aria-invalid={!!error}
             aria-describedby={error ? `${inputId}-error` : undefined}
+            // Suppress hydration warnings for attributes injected by password managers
+            suppressHydrationWarning
             {...props}
           />
         </div>

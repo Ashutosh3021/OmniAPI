@@ -1,4 +1,9 @@
-export const API_BASE = "/api";
+/**
+ * Backend API base URL
+ * - Development: http://localhost:8000/api/v1
+ * - Production: Set NEXT_PUBLIC_API_URL environment variable
+ */
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: "LayoutDashboard" },

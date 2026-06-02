@@ -19,6 +19,8 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
           type="checkbox"
           id={checkboxId}
           className="h-4 w-4 rounded border-outline text-secondary-fixed focus:ring-secondary-fixed/50"
+          // Suppress hydration warnings from password manager / browser extension attribute injection
+          suppressHydrationWarning
           {...props}
         />
         <span className="text-body-sm text-on-surface">{label}</span>
