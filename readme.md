@@ -14,7 +14,13 @@
 ![Celery](https://img.shields.io/badge/Celery-5.3+-37B24D?style=flat-square&logo=celery)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Under%20Development-brightgreen?style=flat-square)
+![Status](https://img.shields.io/badge/Status-V1%20Shipped-brightgreen?style=flat-square)
+
+<div align="center">
+
+[![Try OmniAPI](https://img.shields.io/badge/🚀%20Try%20It%20Live-omniapi3021.vercel.app-6366f1?style=for-the-badge)](https://omniapi3021.vercel.app)
+
+</div>
 
 ---
 
