@@ -111,7 +111,10 @@ def _mock_redis_clients(request: pytest.FixtureRequest) -> Generator[None, None,
 def _mock_celery_inspect() -> Generator[None, None, None]:
     """Health checks report Celery as ok without a live worker."""
     with patch("app.api.v1.endpoints.health.celery_app") as mock_celery:
-        mock_celery.control.inspect.return_value.active.return_value = {"worker": []}
+        # ping() returns {worker_name: {"ok": "pong"}} for each live worker
+        mock_celery.control.inspect.return_value.ping.return_value = {
+            "celery@test-worker": {"ok": "pong"}
+        }
         yield
 
 

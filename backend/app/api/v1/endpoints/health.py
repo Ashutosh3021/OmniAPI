@@ -34,9 +34,12 @@ async def _check_redis(redis_url: str) -> str:
 
 def _check_celery() -> str:
     try:
-        inspect = celery_app.control.inspect(timeout=2)
-        active = inspect.active()
-        if active:
+        # ping() returns a dict of {worker_name: {"ok": "pong"}} for each
+        # live worker. active() only returns workers currently processing a
+        # task — an idle worker returns None, which is NOT an error.
+        inspect = celery_app.control.inspect(timeout=5)
+        pong = inspect.ping()
+        if pong:
             return "ok"
         return "no_workers"
     except Exception as exc:
