@@ -42,10 +42,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  if (!mounted) {
-    return <>{children}</>;
-  }
-
+  // Always render the Provider so consumers never receive a null context.
+  // Before mount, theme defaults to "light" — the useEffect above corrects
+  // it client-side, preventing a flash only on the very first paint.
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
       {children}
