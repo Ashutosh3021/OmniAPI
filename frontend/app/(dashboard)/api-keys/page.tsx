@@ -35,7 +35,7 @@ export default function ApiKeysPage() {
   const handleDelete = async (id: string | number) => {
     try {
       await api.delete(`/api-keys/${id}`);
-      notify("API key deleted", "success");
+      notify("API key permanently deleted", "success");
       loadKeys();
     } catch {
       notify("Failed to delete key", "error");

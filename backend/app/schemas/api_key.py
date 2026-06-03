@@ -13,6 +13,13 @@ class APIKeyCreate(BaseModel):
     expires_at: Optional[datetime] = None
 
 
+class APIKeyUpdate(BaseModel):
+    """Update an existing OmniAPI key."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    expires_at: Optional[datetime] = None
+
+
 class APIKeyResponse(BaseModel):
     """API key metadata (raw key never included)."""
 

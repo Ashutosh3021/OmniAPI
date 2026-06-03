@@ -54,7 +54,7 @@ export default function ApiKeyDetailPage() {
   const onDelete = async () => {
     try {
       await api.delete(`/api-keys/${keyId}`);
-      notify("API key revoked", "success");
+      notify("API key permanently deleted", "success");
       router.push("/api-keys");
     } catch {
       notify("Failed to delete key", "error");
@@ -82,7 +82,7 @@ export default function ApiKeyDetailPage() {
           <div className="flex gap-md">
             <Button type="submit">Save Changes</Button>
             <Button type="button" variant="danger" onClick={onDelete}>
-              Revoke Key
+              Delete Key
             </Button>
           </div>
         </form>

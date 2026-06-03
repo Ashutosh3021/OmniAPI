@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.middleware.tenant_middleware import get_tenant_id
 from app.models.api_key import APIKey
 from app.models.user import User
-from app.schemas.api_key import APIKeyCreate, APIKeyCreatedResponse, APIKeyResponse
+from app.schemas.api_key import APIKeyCreate, APIKeyCreatedResponse, APIKeyResponse, APIKeyUpdate
 from app.services import api_key_service
 from app.services.webhook_service import WebhookService
 from app.utils.decorators import require_auth
@@ -94,14 +94,15 @@ def get_api_key(
     return _to_response(api_key)
 
 
-@router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
-def revoke_api_key(
+@router.patch("/{key_id}", response_model=APIKeyResponse)
+def update_api_key(
     key_id: int,
+    body: APIKeyUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
-) -> None:
-    """Soft-delete an API key by setting is_active to False."""
+) -> APIKeyResponse:
+    """Update name and/or expiry of an existing API key."""
     _ = tenant_id
     api_key = db.scalar(
         select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
@@ -109,5 +110,30 @@ def revoke_api_key(
     if api_key is None:
         raise ResourceNotFoundError("API key not found")
 
-    api_key.is_active = False
+    if body.name is not None:
+        api_key.name = body.name
+    if body.expires_at is not None:
+        api_key.expires_at = body.expires_at
+
+    db.commit()
+    db.refresh(api_key)
+    return _to_response(api_key)
+
+
+@router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_api_key(
+    key_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+    tenant_id: str = Depends(get_tenant_id),
+) -> None:
+    """Permanently delete an API key for the current tenant."""
+    _ = tenant_id
+    api_key = db.scalar(
+        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
+    )
+    if api_key is None:
+        raise ResourceNotFoundError("API key not found")
+
+    db.delete(api_key)
     db.commit()
