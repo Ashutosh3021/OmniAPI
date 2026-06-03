@@ -43,7 +43,7 @@ export default function AnalyticsPage() {
   const exportData = data.endpoints.map((e) => ({
     endpoint: e.endpoint,
     calls: e.calls,
-    cacheHit: data.summary.cacheHitPercent,
+    cacheHit: data.summary.cache_hit_percent,
   }));
 
   return (
@@ -63,7 +63,7 @@ export default function AnalyticsPage() {
           <h3 className="text-headline-sm font-semibold mb-md">Cache Hit Rate</h3>
           <CachePieChart data={data.cache} />
           <p className="text-center text-display text-on-surface mt-sm">
-            {data.summary.cacheHitPercent}%
+            {data.summary.cache_hit_percent}%
           </p>
         </Card>
       </div>

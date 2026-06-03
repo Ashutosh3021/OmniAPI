@@ -19,7 +19,7 @@ export function BillingInfo() {
         </div>
         <div>
           <p className="text-on-surface-variant">Next billing date</p>
-          <p className="font-semibold text-on-surface">Jun 1, 2025</p>
+          <p className="font-semibold text-on-surface">Jun 1, 2026</p>
         </div>
       </div>
       <button
