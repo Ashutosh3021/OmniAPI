@@ -40,7 +40,7 @@ export const webhookSchema = z.object({
   ),
   event_type: z.enum(
     ["orchestrate.complete", "orchestrate.failed", "api_key.created"],
-    { errorMap: () => ({ message: "Select a valid event type" }) }
+    { error: "Select a valid event type" }
   ),
 });
 
