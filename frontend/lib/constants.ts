@@ -46,6 +46,8 @@ export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 export const DOCS_SECTIONS = [
   { id: "getting-started", title: "Getting Started" },
   { id: "authentication", title: "Authentication" },
+  { id: "external-services", title: "External Services" },
+  { id: "orchestrate", title: "Orchestrating Calls" },
   { id: "api-reference", title: "API Reference" },
   { id: "webhooks", title: "Webhooks" },
   { id: "code-examples", title: "Code Examples" },
