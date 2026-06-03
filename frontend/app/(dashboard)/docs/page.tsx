@@ -278,7 +278,7 @@ function OrchestrateSection() {
         Say you have three external services configured — <Badge variant="info">weather</Badge>{" "}
         <Badge variant="info">news</Badge> <Badge variant="info">stock</Badge> — but right now
         you only want stock data. You simply put just{" "}
-        <code className="font-mono text-sm">"stock"</code> in the{" "}
+        <code className="font-mono text-sm">&quot;stock&quot;</code> in the{" "}
         <code className="font-mono text-sm">services</code> array. OmniAPI will only call that
         one service and ignore the others entirely.
       </p>
