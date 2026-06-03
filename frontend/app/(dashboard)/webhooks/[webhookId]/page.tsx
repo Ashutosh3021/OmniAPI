@@ -9,7 +9,7 @@ import { Button } from "@/components/shared/Button";
 import { Spinner } from "@/components/shared/Spinner";
 import { api } from "@/lib/api";
 import { useNotification } from "@/context/NotificationContext";
-import { formatDate, formatRelativeTime } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import type { Webhook } from "@/types";
 
 export default function WebhookDetailPage() {
@@ -41,30 +41,17 @@ export default function WebhookDetailPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <PageHeader title={webhook.name} description={webhook.url} />
+      <PageHeader title={webhook.url} description={`Event: ${webhook.event_type}`} />
       <Card>
         <div className="flex gap-sm mb-md">
-          <Badge variant="success">{webhook.status}</Badge>
-          <Badge variant="info">{webhook.successRate}% success</Badge>
-        </div>
-        <div className="mb-md">
-          <p className="text-label-md text-on-surface-variant mb-sm">Events</p>
-          <div className="flex flex-wrap gap-sm">
-            {webhook.events.map((e) => (
-              <Badge key={e} variant="neutral">
-                {e}
-              </Badge>
-            ))}
-          </div>
+          <Badge variant={webhook.is_active ? "success" : "neutral"}>
+            {webhook.is_active ? "Active" : "Paused"}
+          </Badge>
+          <Badge variant="info">{webhook.event_type}</Badge>
         </div>
         <dl className="space-y-sm text-body-sm text-on-surface-variant mb-lg">
-          <div>Created {formatDate(webhook.createdAt)}</div>
-          <div>
-            Last triggered{" "}
-            {webhook.lastTriggered
-              ? formatRelativeTime(webhook.lastTriggered)
-              : "Never"}
-          </div>
+          <div>Created {formatDate(webhook.created_at)}</div>
+          <div>Retry count: {webhook.retry_count}</div>
         </dl>
         <Button variant="danger" onClick={onDelete}>
           Delete Webhook

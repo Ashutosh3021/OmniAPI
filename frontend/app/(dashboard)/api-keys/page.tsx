@@ -32,7 +32,7 @@ export default function ApiKeysPage() {
     loadKeys();
   }, [loadKeys]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string | number) => {
     try {
       await api.delete(`/api-keys/${id}`);
       notify("API key deleted", "success");

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.middleware.tenant_middleware import get_tenant_id
 from app.models.user import User
-from app.schemas.analytics import AnalyticsResponse
+from app.schemas.analytics import AnalyticsResponse, AnalyticsSummaryResponse
 from app.services.analytics_service import AnalyticsService
 from app.utils.decorators import require_auth
 
@@ -41,6 +41,17 @@ def _csv_row_generator(service: AnalyticsService) -> Iterator[str]:
         yield buffer.getvalue()
         buffer.seek(0)
         buffer.truncate(0)
+
+
+@router.get("/summary", response_model=AnalyticsSummaryResponse)
+def get_analytics_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+    tenant_id: str = Depends(get_tenant_id),
+) -> AnalyticsSummaryResponse:
+    """Lightweight 24 h summary for the dashboard home page."""
+    _ = tenant_id
+    return AnalyticsService(db=db, user=current_user).get_summary()
 
 
 @router.get("/usage", response_model=AnalyticsResponse)

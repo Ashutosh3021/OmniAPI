@@ -6,9 +6,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Key } from "lucide-react";
 import { Button } from "@/components/shared/Button";
-import { Checkbox } from "@/components/shared/Checkbox";
 import { Input } from "@/components/shared/Input";
-import { API_KEY_PERMISSIONS } from "@/lib/constants";
+import { CopyButton } from "@/components/shared/CopyButton";
 import { api } from "@/lib/api";
 import { useNotification } from "@/context/NotificationContext";
 import { apiKeySchema, type ApiKeyInput } from "@/lib/validators";
@@ -23,29 +22,28 @@ export function CreateAPIKeyForm() {
   const {
     register,
     handleSubmit,
-    watch,
-    setValue,
     formState: { errors },
   } = useForm<ApiKeyInput>({
     resolver: zodResolver(apiKeySchema),
-    defaultValues: { permissions: ["read"] },
   });
-
-  const permissions = watch("permissions") ?? [];
-
-  const togglePermission = (id: string) => {
-    const next = permissions.includes(id)
-      ? permissions.filter((p) => p !== id)
-      : [...permissions, id];
-    setValue("permissions", next, { shouldValidate: true });
-  };
 
   const onSubmit = async (data: ApiKeyInput) => {
     setLoading(true);
     try {
-      const result = await api.post<ApiKey>("/api-keys", data);
-      setGeneratedKey(result.key);
-      notify("API key created successfully", "success");
+      // Backend accepts { name, expires_at } and returns { ..., raw_key }
+      const payload: { name: string; expires_at?: string } = { name: data.name };
+      if (data.expires_at) {
+        // Convert date string (YYYY-MM-DD) to ISO-8601 datetime expected by the backend
+        payload.expires_at = new Date(data.expires_at).toISOString();
+      }
+
+      const result = await api.post<ApiKey & { raw_key: string }>("/api-keys", payload);
+      if (result.raw_key) {
+        setGeneratedKey(result.raw_key);
+        notify("API key created successfully", "success");
+      } else {
+        notify("Key created but secret was not returned — contact support", "error");
+      }
     } catch {
       notify("Failed to create API key", "error");
     }
@@ -58,9 +56,12 @@ export function CreateAPIKeyForm() {
         <p className="text-body-md text-on-surface-variant">
           Copy this key now. You won&apos;t be able to see it again.
         </p>
-        <code className="block p-md bg-slate-800 text-emerald-400 rounded font-mono text-code break-all">
-          {generatedKey}
-        </code>
+        <div className="relative flex items-start gap-2 p-md bg-slate-800 rounded">
+          <code className="flex-1 text-emerald-400 font-mono text-code break-all">
+            {generatedKey}
+          </code>
+          <CopyButton value={generatedKey} label="Copy API key to clipboard" />
+        </div>
         <div className="flex gap-md justify-end">
           <Button variant="secondary" onClick={() => router.push("/api-keys")}>
             Done
@@ -79,30 +80,12 @@ export function CreateAPIKeyForm() {
         error={errors.name?.message}
         {...register("name")}
       />
-      <div>
-        <p className="text-label-md font-medium text-on-surface-variant mb-sm">Permissions</p>
-        <div className="grid grid-cols-2 gap-sm">
-          {API_KEY_PERMISSIONS.map((perm) => (
-            <Checkbox
-              key={perm.id}
-              label={perm.label}
-              checked={permissions.includes(perm.id)}
-              onChange={() => togglePermission(perm.id)}
-            />
-          ))}
-        </div>
-        {errors.permissions && (
-          <p className="text-body-sm text-error mt-sm" role="alert">
-            {errors.permissions.message}
-          </p>
-        )}
-      </div>
       <Input
         label="Expiration Date (Optional)"
         type="date"
         hint="If left blank, the key will never expire."
-        error={errors.expirationDate?.message}
-        {...register("expirationDate")}
+        error={errors.expires_at?.message}
+        {...register("expires_at")}
       />
       <div className="flex flex-col sm:flex-row justify-end gap-md pt-lg border-t border-outline-variant">
         <Button type="button" variant="secondary" onClick={() => router.back()}>

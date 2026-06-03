@@ -1,10 +1,8 @@
 export interface Webhook {
-  id: string;
-  name: string;
+  webhook_id: number;
   url: string;
-  events: string[];
-  status: "active" | "paused" | "failed";
-  createdAt: string;
-  lastTriggered: string | null;
-  successRate: number;
+  event_type: string;
+  is_active: boolean;
+  retry_count: number;
+  created_at: string;
 }

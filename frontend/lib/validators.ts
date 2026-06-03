@@ -23,10 +23,7 @@ export const forgotPasswordSchema = z.object({
 
 export const apiKeySchema = z.object({
   name: z.string().min(2, "Key name is required"),
-  permissions: z
-    .array(z.string())
-    .min(1, "Select at least one permission"),
-  expirationDate: z.string().optional(),
+  expires_at: z.string().optional(),
 });
 
 export const externalServiceSchema = z.object({
@@ -37,10 +34,14 @@ export const externalServiceSchema = z.object({
 });
 
 export const webhookSchema = z.object({
-  name: z.string().min(2, "Webhook name is required"),
-  url: z.string().url("Enter a valid URL"),
-  events: z.array(z.string()).min(1, "Select at least one event"),
-  secret: z.string().optional(),
+  url: z.string().url("Enter a valid URL").refine(
+    (v) => v.toLowerCase().startsWith("https://"),
+    "Webhook URL must use HTTPS"
+  ),
+  event_type: z.enum(
+    ["orchestrate.complete", "orchestrate.failed", "api_key.created"],
+    { errorMap: () => ({ message: "Select a valid event type" }) }
+  ),
 });
 
 export const profileSchema = z.object({

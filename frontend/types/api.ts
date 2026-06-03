@@ -1,13 +1,10 @@
 export interface ApiKey {
-  id: string;
+  key_id: number;
   name: string;
-  keyPrefix: string;
-  key: string;
-  permissions: string[];
-  createdAt: string;
-  expiresAt: string | null;
-  lastUsed: string | null;
-  status: "active" | "expiring" | "revoked";
+  is_active: boolean;
+  expires_at: string | null;
+  created_at: string;
+  raw_key?: string; // only present in APIKeyCreatedResponse
 }
 
 export interface ExternalService {

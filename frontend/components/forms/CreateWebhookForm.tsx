@@ -6,19 +6,17 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Webhook } from "lucide-react";
 import { Button } from "@/components/shared/Button";
-import { Checkbox } from "@/components/shared/Checkbox";
 import { Input } from "@/components/shared/Input";
 import { api } from "@/lib/api";
 import { useNotification } from "@/context/NotificationContext";
 import { webhookSchema, type WebhookInput } from "@/lib/validators";
 import type { Webhook as WebhookType } from "@/types";
 
-const WEBHOOK_EVENTS = [
-  { id: "payment.succeeded", label: "payment.succeeded" },
-  { id: "payment.failed", label: "payment.failed" },
-  { id: "user.created", label: "user.created" },
-  { id: "api.request", label: "api.request" },
-];
+const WEBHOOK_EVENT_TYPES = [
+  { value: "orchestrate.complete", label: "Orchestrate — Complete" },
+  { value: "orchestrate.failed", label: "Orchestrate — Failed" },
+  { value: "api_key.created", label: "API Key — Created" },
+] as const;
 
 export function CreateWebhookForm() {
   const router = useRouter();
@@ -28,22 +26,10 @@ export function CreateWebhookForm() {
   const {
     register,
     handleSubmit,
-    watch,
-    setValue,
     formState: { errors },
   } = useForm<WebhookInput>({
     resolver: zodResolver(webhookSchema),
-    defaultValues: { events: [] },
   });
-
-  const events = watch("events") ?? [];
-
-  const toggleEvent = (id: string) => {
-    const next = events.includes(id)
-      ? events.filter((e) => e !== id)
-      : [...events, id];
-    setValue("events", next, { shouldValidate: true });
-  };
 
   const onSubmit = async (data: WebhookInput) => {
     setLoading(true);
@@ -60,40 +46,34 @@ export function CreateWebhookForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-xl" noValidate>
       <Input
-        label="Webhook Name"
-        placeholder="e.g. Payment Events"
-        error={errors.name?.message}
-        {...register("name")}
-      />
-      <Input
         label="Endpoint URL"
         type="url"
         placeholder="https://api.example.com/webhooks"
+        hint="Must be an HTTPS URL."
         error={errors.url?.message}
         {...register("url")}
       />
       <div>
-        <p className="text-label-md font-medium text-on-surface-variant mb-sm">Events</p>
-        <div className="space-y-sm">
-          {WEBHOOK_EVENTS.map((evt) => (
-            <Checkbox
-              key={evt.id}
-              label={evt.label}
-              checked={events.includes(evt.id)}
-              onChange={() => toggleEvent(evt.id)}
-            />
+        <label className="text-label-md font-medium text-on-surface-variant mb-sm block">
+          Event Type
+        </label>
+        <select
+          className="w-full rounded border border-outline bg-surface px-md py-sm text-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-secondary-fixed"
+          {...register("event_type")}
+        >
+          <option value="">Select an event…</option>
+          {WEBHOOK_EVENT_TYPES.map((evt) => (
+            <option key={evt.value} value={evt.value}>
+              {evt.label}
+            </option>
           ))}
-        </div>
-        {errors.events && (
-          <p className="text-body-sm text-error mt-sm">{errors.events.message}</p>
+        </select>
+        {errors.event_type && (
+          <p className="text-body-sm text-error mt-sm" role="alert">
+            {errors.event_type.message}
+          </p>
         )}
       </div>
-      <Input
-        label="Signing Secret (Optional)"
-        type="password"
-        hint="Used to verify webhook payloads."
-        {...register("secret")}
-      />
       <div className="flex flex-col sm:flex-row justify-end gap-md pt-lg border-t border-outline-variant">
         <Button type="button" variant="secondary" onClick={() => router.back()}>
           Cancel

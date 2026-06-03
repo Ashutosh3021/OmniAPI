@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Spinner } from "@/components/shared/Spinner";
 import { api } from "@/lib/api";
 import type { ActivityLog, AnalyticsSummary, UsageDataPoint } from "@/types";
+import type { AnalyticsResponse } from "@/types/analytics";
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
@@ -21,15 +22,20 @@ export default function DashboardPage() {
       try {
         const [summaryRes, usageRes] = await Promise.all([
           api.get<AnalyticsSummary>("/analytics/summary"),
-          api.get<{ usage: UsageDataPoint[]; activity: ActivityLog[] }>(
-            "/analytics/usage"
-          ),
+          api.get<AnalyticsResponse>("/analytics/usage"),
         ]);
         setSummary(summaryRes);
-        setUsage(usageRes.usage);
-        setActivity(usageRes.activity);
+        // Map per-service breakdown → UsageDataPoint[] for the chart
+        setUsage(
+          usageRes.by_service.map((s) => ({
+            time: s.service_name,
+            requests: s.call_count,
+          }))
+        );
+        // Activity feed not yet exposed by /analytics/usage; stays empty for now
+        setActivity([]);
       } catch {
-        // handled by api client
+        // errors surfaced by the api client
       }
       setLoading(false);
     }
@@ -52,23 +58,23 @@ export default function DashboardPage() {
         <div className="md:col-span-4 flex flex-col gap-gutter">
           <StatsCard
             label="Calls Today"
-            value={summary ? formatCalls(summary.callsToday) : "—"}
-            subtext={summary ? `+${summary.callsChange}% vs yesterday` : undefined}
+            value={summary ? formatCalls(summary.calls_today) : "—"}
+            subtext={summary ? `+${summary.calls_change}% vs yesterday` : undefined}
             subtextVariant="positive"
             icon={TrendingUp}
           />
           <StatsCard
             label="Cache Hit %"
-            value={summary ? `${summary.cacheHitPercent}%` : "—"}
+            value={summary ? `${summary.cache_hit_percent}%` : "—"}
             subtext="Stable over 7 days"
             icon={MemoryStick}
           />
           <StatsCard
             label="Avg Response"
-            value={summary ? `${summary.avgResponseMs}` : "—"}
+            value={summary ? `${summary.avg_response_ms}ms` : "—"}
             subtext={
               summary
-                ? `+${summary.responseChangeMs}ms avg increase`
+                ? `${summary.response_change_ms > 0 ? "+" : ""}${summary.response_change_ms}ms vs yesterday`
                 : undefined
             }
             subtextVariant="negative"

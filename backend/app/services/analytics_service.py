@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.external_service import ExternalService
 from app.models.usage_log import UsageLog
 from app.models.user import User
-from app.schemas.analytics import AnalyticsResponse, ServiceBreakdown, UsageMetrics
+from app.schemas.analytics import AnalyticsSummaryResponse, AnalyticsResponse, ServiceBreakdown, UsageMetrics
 
 # Proxy cost per millisecond of upstream compute avoided by cache hits.
 # Formula: estimated_cost_saved = cache_hits * avg_upstream_response_time_ms * COST_PER_UPSTREAM_MS_USD
@@ -22,6 +22,41 @@ class AnalyticsService:
     def __init__(self, db: Session, user: User) -> None:
         self.db = db
         self.user = user
+
+    def get_summary(self) -> AnalyticsSummaryResponse:
+        """Compute the lightweight summary metrics used on the dashboard home page.
+
+        'Calls today' vs 'calls yesterday' is used to derive the change percentage.
+        'avg_response_ms change' compares today vs yesterday as well.
+        """
+        now = datetime.now(timezone.utc)
+        today_start = now - timedelta(hours=24)
+        yesterday_start = today_start - timedelta(hours=24)
+
+        today_metrics = self._aggregate_metrics(today_start)
+        yesterday_metrics = self._aggregate_metrics(yesterday_start)
+
+        calls_today = today_metrics.total_calls
+        calls_yesterday = yesterday_metrics.total_calls
+        calls_change = (
+            round((calls_today - calls_yesterday) / calls_yesterday * 100, 1)
+            if calls_yesterday
+            else 0.0
+        )
+
+        avg_today = today_metrics.avg_response_time_ms
+        avg_yesterday = yesterday_metrics.avg_response_time_ms
+        response_change_ms = round(avg_today - avg_yesterday, 1)
+
+        cache_hit_percent = round(today_metrics.cache_hit_rate * 100, 1)
+
+        return AnalyticsSummaryResponse(
+            calls_today=calls_today,
+            calls_change=calls_change,
+            cache_hit_percent=cache_hit_percent,
+            avg_response_ms=round(avg_today, 1),
+            response_change_ms=response_change_ms,
+        )
 
     def get_metrics(self, period: str) -> AnalyticsResponse:
         """Compute metrics and per-service breakdown for the given period."""

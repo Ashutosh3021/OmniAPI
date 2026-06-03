@@ -3,6 +3,16 @@
 from pydantic import BaseModel, Field
 
 
+class AnalyticsSummaryResponse(BaseModel):
+    """Lightweight summary for the dashboard home page."""
+
+    calls_today: int
+    calls_change: float
+    cache_hit_percent: float
+    avg_response_ms: float
+    response_change_ms: float
+
+
 class UsageMetrics(BaseModel):
     """Aggregated usage metrics for a time period."""
 

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { MoreHorizontal, Trash2 } from "lucide-react";
 import { Badge } from "@/components/shared/Badge";
-import { maskKey, formatDate, formatRelativeTime } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import type { ApiKey } from "@/types";
 
 interface APIKeysTableProps {
   keys: ApiKey[];
-  onDelete?: (id: string) => void;
+  onDelete?: (id: string | number) => void;
 }
 
 export function APIKeysTable({ keys, onDelete }: APIKeysTableProps) {
@@ -28,38 +28,43 @@ export function APIKeysTable({ keys, onDelete }: APIKeysTableProps) {
           <thead>
             <tr className="bg-surface-container-low border-b border-outline">
               <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Name</th>
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Key</th>
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Permissions</th>
               <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Status</th>
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Last Used</th>
+              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Expires</th>
+              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Created</th>
               <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Actions</th>
             </tr>
           </thead>
-          <tbody className="font-mono text-code">
+          <tbody className="font-sans text-body-sm">
             {keys.map((key) => (
-              <tr key={key.id} className="border-b border-outline-variant hover:bg-surface-container-low">
-                <td className="py-md px-lg font-sans text-body-md">
-                  <Link href={`/api-keys/${key.id}`} className="text-secondary-fixed hover:underline">
+              <tr key={key.key_id} className="border-b border-outline-variant hover:bg-surface-container-low">
+                <td className="py-md px-lg">
+                  <Link href={`/api-keys/${key.key_id}`} className="text-secondary-fixed hover:underline font-medium">
                     {key.name}
                   </Link>
                 </td>
-                <td className="py-md px-lg text-on-surface-variant">{maskKey(key.key)}</td>
-                <td className="py-md px-lg font-sans text-body-sm">{key.permissions.join(", ")}</td>
                 <td className="py-md px-lg">
-                  <Badge variant={key.status === "active" ? "success" : key.status === "expiring" ? "warning" : "error"}>
-                    {key.status}
+                  <Badge variant={key.is_active ? "success" : "error"}>
+                    {key.is_active ? "Active" : "Revoked"}
                   </Badge>
                 </td>
-                <td className="py-md px-lg font-sans text-body-sm text-on-surface-variant">
-                  {key.lastUsed ? formatRelativeTime(key.lastUsed) : "Never"}
+                <td className="py-md px-lg text-on-surface-variant">
+                  {key.expires_at ? formatDate(key.expires_at) : "Never"}
+                </td>
+                <td className="py-md px-lg text-on-surface-variant">
+                  {formatDate(key.created_at)}
                 </td>
                 <td className="py-md px-lg">
                   <div className="flex gap-2">
-                    <Link href={`/api-keys/${key.id}`} className="p-1 hover:text-secondary-fixed" aria-label={`View ${key.name}`}>
+                    <Link href={`/api-keys/${key.key_id}`} className="p-1 hover:text-secondary-fixed" aria-label={`View ${key.name}`}>
                       <MoreHorizontal className="h-4 w-4" />
                     </Link>
                     {onDelete && (
-                      <button type="button" onClick={() => onDelete(key.id)} className="p-1 hover:text-error" aria-label={`Delete ${key.name}`}>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(key.key_id)}
+                        className="p-1 hover:text-error"
+                        aria-label={`Delete ${key.name}`}
+                      >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     )}
@@ -75,17 +80,18 @@ export function APIKeysTable({ keys, onDelete }: APIKeysTableProps) {
       <div className="md:hidden space-y-md">
         {keys.map((key) => (
           <Link
-            key={key.id}
-            href={`/api-keys/${key.id}`}
+            key={key.key_id}
+            href={`/api-keys/${key.key_id}`}
             className="block bg-white dark:bg-surface border border-outline rounded-xl p-md hover:border-secondary-fixed"
           >
             <div className="flex justify-between items-start mb-sm">
               <span className="font-medium text-on-surface">{key.name}</span>
-              <Badge variant={key.status === "active" ? "success" : "warning"}>{key.status}</Badge>
+              <Badge variant={key.is_active ? "success" : "error"}>
+                {key.is_active ? "Active" : "Revoked"}
+              </Badge>
             </div>
-            <p className="font-mono text-code text-on-surface-variant">{maskKey(key.key)}</p>
             <p className="text-label-sm text-on-surface-variant mt-sm">
-              Expires: {key.expiresAt ? formatDate(key.expiresAt) : "Never"}
+              Expires: {key.expires_at ? formatDate(key.expires_at) : "Never"}
             </p>
           </Link>
         ))}

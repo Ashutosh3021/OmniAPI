@@ -13,7 +13,7 @@ import { Badge } from "@/components/shared/Badge";
 import { api } from "@/lib/api";
 import { apiKeySchema, type ApiKeyInput } from "@/lib/validators";
 import { useNotification } from "@/context/NotificationContext";
-import { maskKey, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import type { ApiKey } from "@/types";
 
 export default function ApiKeyDetailPage() {
@@ -32,8 +32,7 @@ export default function ApiKeyDetailPage() {
       setKey(data);
       reset({
         name: data.name,
-        permissions: data.permissions,
-        expirationDate: data.expiresAt?.split("T")[0] ?? "",
+        expires_at: data.expires_at?.split("T")[0] ?? "",
       });
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -41,7 +40,11 @@ export default function ApiKeyDetailPage() {
 
   const onSave = async (data: ApiKeyInput) => {
     try {
-      await api.put(`/api-keys/${keyId}`, data);
+      const payload: { name: string; expires_at?: string } = { name: data.name };
+      if (data.expires_at) {
+        payload.expires_at = new Date(data.expires_at).toISOString();
+      }
+      await api.patch(`/api-keys/${keyId}`, payload);
       notify("API key updated", "success");
     } catch {
       notify("Failed to update key", "error");
@@ -63,17 +66,19 @@ export default function ApiKeyDetailPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <PageHeader title={key.name} description={`Key: ${maskKey(key.key)}`} />
+      <PageHeader title={key.name} description={`Key ID: ${key.key_id}`} />
       <Card className="mb-lg">
         <div className="flex gap-sm mb-md">
-          <Badge variant={key.status === "active" ? "success" : "warning"}>{key.status}</Badge>
+          <Badge variant={key.is_active ? "success" : "error"}>
+            {key.is_active ? "Active" : "Revoked"}
+          </Badge>
           <span className="text-body-sm text-on-surface-variant">
-            Created {formatDate(key.createdAt)}
+            Created {formatDate(key.created_at)}
           </span>
         </div>
         <form onSubmit={handleSubmit(onSave)} className="space-y-lg">
           <Input label="Key Name" error={errors.name?.message} {...register("name")} />
-          <Input label="Expiration" type="date" {...register("expirationDate")} />
+          <Input label="Expiration Date (Optional)" type="date" {...register("expires_at")} />
           <div className="flex gap-md">
             <Button type="submit">Save Changes</Button>
             <Button type="button" variant="danger" onClick={onDelete}>

@@ -7,18 +7,18 @@
  ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝╚═╝     ╚═╝
 ```
 
-![Python](https://img.shields.io/badge/Python-3.11+-3776ab?style=flat-square&logo=python)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688?style=flat-square&logo=fastapi)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?style=flat-square&logo=postgresql)
-![Redis](https://img.shields.io/badge/Redis-7+-DC382D?style=flat-square&logo=redis)
-![Celery](https://img.shields.io/badge/Celery-5.3+-37B24D?style=flat-square&logo=celery)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Status](https://img.shields.io/badge/Status-V1%20Shipped-brightgreen?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.11+-3776ab?style=for-the-badge&logo=python&logoColor=white&labelColor=000)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688?style=for-the-badge&logo=fastapi&logoColor=white&labelColor=000)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?style=for-the-badge&logo=postgresql&logoColor=white&labelColor=000)
+![Redis](https://img.shields.io/badge/Redis-7+-DC382D?style=for-the-badge&logo=redis&logoColor=white&labelColor=000)
+![Celery](https://img.shields.io/badge/Celery-5.3+-37B24D?style=for-the-badge&logo=celery&logoColor=white&labelColor=000)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white&labelColor=000)
+![License](https://img.shields.io/badge/License-MIT-2ecc71?style=for-the-badge&logoColor=white&labelColor=000)
+![Status](https://img.shields.io/badge/Status-V1%20Shipped-2ecc71?style=for-the-badge&logoColor=white&labelColor=000)
 
 <div align="center">
 
-[![Try OmniAPI](https://img.shields.io/badge/🚀%20Try%20It%20Live-omniapi3021.vercel.app-6366f1?style=for-the-badge)](https://omniapi3021.vercel.app)
+[![Try OmniAPI](https://img.shields.io/badge/🚀_Launch_OmniAPI-005eff?style=for-the-badge&logo=rocket&logoColor=white&labelColor=000&color=0070f3)](https://omniapi3021.vercel.app)
 
 </div>
 
@@ -35,20 +35,13 @@
 ## 📋 The Problem
 
 ### Why Build This?
-
-```
-┌─────────────────────────────────────────────────────┐
-│           DEVELOPER PAIN POINTS TODAY              │
-├─────────────────────────────────────────────────────┤
-│ ❌ Manage 5+ API keys for different services       │
-│ ❌ Hit rate limits and get throttled               │
-│ ❌ No caching → redundant API calls = $$$ waste    │
-│ ❌ Slow responses from sequential API calls        │
-│ ❌ No visibility into usage across all APIs        │
-│ ❌ Complex error handling for each API             │
-│ ❌ Synchronous blocking requests kill performance  │
-└─────────────────────────────────────────────────────┘
-```
+> - 🔑 **5+ API keys** scattered everywhere
+> - ⚠️ **Rate limits** kill your workflow
+> - 💰 **No caching** = wasted budget
+> - 🐢 **Sequential calls** = slow responses
+> - 👁️ **Zero visibility** into API usage
+> - 🛠️ **Complex error handling** for each API
+> - 🔒 **Blocking requests** tank performance
 
 **Example Scenario:**
 A SaaS product needs weather + news + stock data. Without OmniAPI:

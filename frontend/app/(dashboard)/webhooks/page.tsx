@@ -31,7 +31,7 @@ export default function WebhooksPage() {
     load();
   }, [load]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string | number) => {
     try {
       await api.delete(`/webhooks/${id}`);
       notify("Webhook deleted", "success");
