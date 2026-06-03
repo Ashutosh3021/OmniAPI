@@ -39,6 +39,7 @@ export function SignupForm() {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-lg" noValidate>
       <Input
         label="Full Name"
+        autoComplete="name"
         leftIcon={<User className="h-5 w-5" />}
         error={errors.name?.message}
         {...register("name")}
@@ -46,6 +47,7 @@ export function SignupForm() {
       <Input
         label="Email Address"
         type="email"
+        autoComplete="email"
         leftIcon={<Mail className="h-5 w-5" />}
         error={errors.email?.message}
         {...register("email")}
@@ -53,6 +55,7 @@ export function SignupForm() {
       <Input
         label="Password"
         type="password"
+        autoComplete="new-password"
         leftIcon={<Lock className="h-5 w-5" />}
         error={errors.password?.message}
         {...register("password")}
@@ -60,6 +63,7 @@ export function SignupForm() {
       <Input
         label="Confirm Password"
         type="password"
+        autoComplete="new-password"
         leftIcon={<Lock className="h-5 w-5" />}
         error={errors.confirmPassword?.message}
         {...register("confirmPassword")}

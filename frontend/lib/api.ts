@@ -1,5 +1,5 @@
 import { API_BASE } from "./constants";
-import { clearAuth, getStoredToken, getStoredRefreshToken, storeAuth } from "./auth";
+import { clearAuth, getStoredToken, getStoredRefreshToken } from "./auth";
 
 export class ApiError extends Error {
   constructor(
@@ -38,17 +38,22 @@ async function refreshAccessToken(): Promise<boolean> {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${refreshToken}`,
         },
+        body: JSON.stringify({ refresh_token: refreshToken }),
       });
 
       if (!response.ok) {
         return false;
       }
 
-      const data = await response.json();
-      if (data.tokens && data.user) {
-        storeAuth(data.tokens, data.user);
+      const data = await response.json() as {
+        access_token?: string;
+        refresh_token?: string;
+      };
+      // Backend returns snake_case token pair — store the access token so the
+      // next retried request picks it up. Full storeAuth happens in AuthContext.
+      if (data.access_token) {
+        localStorage.setItem("omniapi_access_token", data.access_token);
         return true;
       }
 
