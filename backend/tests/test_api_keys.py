@@ -51,16 +51,21 @@ def test_delete_api_key(client, auth_headers) -> None:
     create = client.post(
         "/api/v1/api-keys",
         headers=auth_headers,
-        json={"name": "To Revoke"},
+        json={"name": "To Delete"},
     )
     key_id = create.json()["key_id"]
 
     delete = client.delete(f"/api/v1/api-keys/{key_id}", headers=auth_headers)
     assert delete.status_code == 204
 
+    # Hard delete — key must no longer appear in the listing
     listing = client.get("/api/v1/api-keys", headers=auth_headers)
-    revoked = next(k for k in listing.json() if k["key_id"] == key_id)
-    assert revoked["is_active"] is False
+    assert listing.status_code == 200
+    assert all(k["key_id"] != key_id for k in listing.json())
+
+    # And fetching it directly must return 404
+    get = client.get(f"/api/v1/api-keys/{key_id}", headers=auth_headers)
+    assert get.status_code == 404
 
 
 def test_api_keys_require_auth(client) -> None:
