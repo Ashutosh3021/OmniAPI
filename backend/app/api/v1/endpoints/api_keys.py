@@ -76,6 +76,24 @@ def list_api_keys(
     return [_to_response(key) for key in keys]
 
 
+@router.get("/{key_id}", response_model=APIKeyResponse)
+def get_api_key(
+    key_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+    tenant_id: str = Depends(get_tenant_id),
+) -> APIKeyResponse:
+    """Get a specific API key by ID for the current tenant (no raw key)."""
+    _ = tenant_id
+    api_key = db.scalar(
+        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
+    )
+    if api_key is None:
+        raise ResourceNotFoundError("API key not found")
+    
+    return _to_response(api_key)
+
+
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_api_key(
     key_id: int,
