@@ -200,6 +200,14 @@ def test_usage_log_service_id_nullable_after_service_delete(db_session, test_use
 
 def test_client_registry_matches_task_registry() -> None:
     from app.external_apis.registry import CLIENT_REGISTRY
-    from app.services.orchestrator_service import TASK_REGISTRY
+    from app.tasks.external_api_tasks import TASK_REGISTRY
 
     assert set(CLIENT_REGISTRY.keys()) == set(TASK_REGISTRY.keys())
+
+
+def test_service_catalog_matches_external_service_enum() -> None:
+    """The published catalogue and the accepted enum must never drift."""
+    from app.schemas.external_service import ExternalServiceName
+    from app.services.service_catalog import SERVICE_CATALOG
+
+    assert set(SERVICE_CATALOG.keys()) == {e.value for e in ExternalServiceName}

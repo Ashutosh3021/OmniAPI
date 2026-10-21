@@ -4,9 +4,7 @@ import hashlib
 import json
 from typing import Any, Optional
 
-import redis.asyncio as aioredis
-
-from app.config import get_settings
+from app.services.redis_client import get_redis
 
 SERVICE_TTL: dict[str, int] = {
     "weather": 3600,
@@ -14,16 +12,14 @@ SERVICE_TTL: dict[str, int] = {
     "stock": 300,
 }
 
+DEFAULT_TTL_SECONDS = 300
+
 
 class CacheService:
     """Tenant-scoped cache for normalized external API responses."""
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self._redis: aioredis.Redis = aioredis.from_url(
-            settings.redis_url,
-            decode_responses=True,
-        )
+        self._redis = get_redis()
 
     @staticmethod
     def build_key(tenant_id: int | str, service_name: str, params: dict[str, Any]) -> str:
@@ -49,4 +45,5 @@ class CacheService:
         return bool(await self._redis.exists(key))
 
     async def close(self) -> None:
-        await self._redis.aclose()
+        """No-op. The Redis client is shared and closed on application shutdown."""
+        return None

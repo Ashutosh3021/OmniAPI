@@ -9,8 +9,10 @@ import {
   useState,
 } from "react";
 import { api } from "@/lib/api";
+import { TOKEN_STORAGE_KEY } from "@/lib/constants";
 import {
   clearAuth,
+  getStoredRefreshToken,
   getStoredToken,
   getStoredUser,
   isTokenExpired,
@@ -59,6 +61,8 @@ function mapUser(raw: BackendUser): User {
     id: String(raw.user_id),
     name: raw.full_name,
     email: raw.email,
+    tier: raw.tier,
+    createdAt: raw.created_at,
   };
 }
 
@@ -71,7 +75,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (data: LoginInput) => Promise<boolean>;
-  signup: (data: SignupInput) => Promise<boolean>;
+  signup: (data: Omit<SignupInput, "confirmPassword">) => Promise<boolean>;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
 }
@@ -102,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const tokens = mapTokens(tokenRes);
 
         // 2. Temporarily store the access token so the next request is authenticated
-        localStorage.setItem("omniapi_access_token", tokens.accessToken);
+        localStorage.setItem(TOKEN_STORAGE_KEY, tokens.accessToken);
 
         // 3. Fetch the user profile
         const userRes = await api.get<BackendUser>("/auth/me");
@@ -121,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signup = useCallback(
-    async (data: SignupInput): Promise<boolean> => {
+    async (data: Omit<SignupInput, "confirmPassword">): Promise<boolean> => {
       try {
         // Backend route is POST /auth/register (not /auth/signup).
         // It returns a UserResponse (no tokens), so we register then log in.
@@ -146,11 +150,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshToken = useCallback(async (): Promise<boolean> => {
     try {
-      const tokenRes = await api.post<BackendToken>("/auth/refresh", {});
+      const current = getStoredRefreshToken();
+      if (!current) {
+        clearAuth();
+        setUser(null);
+        return false;
+      }
+      const tokenRes = await api.post<BackendToken>("/auth/refresh", {
+        refresh_token: current,
+      });
       const tokens = mapTokens(tokenRes);
 
       // Re-fetch user profile with the new token
-      localStorage.setItem("omniapi_access_token", tokens.accessToken);
+      localStorage.setItem(TOKEN_STORAGE_KEY, tokens.accessToken);
       const userRes = await api.get<BackendUser>("/auth/me");
       const mappedUser = mapUser(userRes);
 

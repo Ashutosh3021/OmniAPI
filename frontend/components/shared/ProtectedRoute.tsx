@@ -17,8 +17,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Spinner />
+      <div className="flex min-h-dvh items-center justify-center bg-ground">
+        <Spinner full label="Checking your session" />
       </div>
     );
   }

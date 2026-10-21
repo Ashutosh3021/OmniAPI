@@ -32,10 +32,16 @@ class ResourceNotFoundError(HTTPException):
 
 
 class ExternalAPIError(HTTPException):
-    """Upstream external API failure (502)."""
+    """Upstream external API failure (502).
 
-    def __init__(self, detail: str = "External API request failed") -> None:
+    ``retryable`` distinguishes transient upstream problems (timeouts, 429s,
+    5xx) from permanent ones (a rejected credential, a bad symbol). Only
+    transient failures are worth retrying.
+    """
+
+    def __init__(self, detail: str = "External API request failed", retryable: bool = True) -> None:
         super().__init__(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+        self.retryable = retryable
 
 
 class ServiceNotConfiguredError(HTTPException):
@@ -43,3 +49,25 @@ class ServiceNotConfiguredError(HTTPException):
 
     def __init__(self, detail: str = "External service not configured") -> None:
         super().__init__(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+
+class RateLimitExceededError(HTTPException):
+    """A rate limit or quota was exceeded (429)."""
+
+    def __init__(self, detail: str, retry_after: int = 60) -> None:
+        super().__init__(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=detail,
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+class ValidationFailedError(HTTPException):
+    """Request payload failed validation (422).
+
+    ``detail`` uses FastAPI's list-of-errors shape so the dashboard can
+    render the offending field next to the input.
+    """
+
+    def __init__(self, errors: list[dict]) -> None:
+        super().__init__(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)

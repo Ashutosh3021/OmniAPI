@@ -8,10 +8,10 @@ from app.services.rate_limiter import RateLimiter
 @pytest.fixture
 async def rate_limiter(fake_redis, monkeypatch: pytest.MonkeyPatch) -> RateLimiter:
     """RateLimiter backed by in-memory fake Redis."""
-    import app.services.rate_limiter as rl_mod
+    import app.services.redis_client as redis_client_mod
 
     monkeypatch.setattr(
-        rl_mod.aioredis,
+        redis_client_mod.aioredis,
         "from_url",
         lambda *args, **kwargs: fake_redis,
     )

@@ -40,12 +40,19 @@ export function clearAuth(): void {
 
 export function isTokenExpired(token: string): boolean {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1] ?? "")) as {
-      exp?: number;
-    };
+    const segment = token.split(".")[1];
+    if (!segment) return true;
+    // JWT segments are base64url, which atob() does not accept untranslated.
+    const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - (normalized.length % 4)) % 4),
+      "="
+    );
+    const payload = JSON.parse(atob(padded)) as { exp?: number };
     if (!payload.exp) return false;
     return payload.exp * 1000 < Date.now();
   } catch {
-    return false;
+    // An unreadable token cannot be trusted, so treat it as expired.
+    return true;
   }
 }

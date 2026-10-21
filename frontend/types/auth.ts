@@ -3,6 +3,10 @@ export interface User {
   name: string;
   email: string;
   company?: string;
+  /** Plan tier reported by the gateway. */
+  tier?: string;
+  /** ISO timestamp of when the account was created. */
+  createdAt?: string;
 }
 
 export interface AuthTokens {

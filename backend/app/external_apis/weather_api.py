@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import httpx
 
 from app.external_apis.base import BaseAPIClient
+from app.external_apis.client_pool import get_client
+from app.schemas.service_params import WeatherParams
 from app.utils.exceptions import ExternalAPIError
 
 WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
@@ -14,6 +16,7 @@ class WeatherAPIClient(BaseAPIClient):
     """Client for OpenWeatherMap current weather data."""
 
     service_name = "weather"
+    params_model = WeatherParams
 
     def __init__(self, encrypted_api_key: str) -> None:
         from app.utils.encryption import decrypt
@@ -37,13 +40,17 @@ class WeatherAPIClient(BaseAPIClient):
             query_params["lon"] = params["lon"]
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(WEATHER_URL, params=query_params)
-                response.raise_for_status()
-                payload = response.json()
+            client = get_client()
+            response = await client.get(WEATHER_URL, params=query_params)
+            response.raise_for_status()
+            payload = response.json()
         except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            # 4xx (other than 408/429) means the request itself is wrong;
+            # retrying it will not help.
+            retryable = status_code >= 500 or status_code in (408, 429)
             raise ExternalAPIError(
-                f"Weather API returned {exc.response.status_code}"
+                f"Weather API returned {status_code}", retryable=retryable
             ) from exc
         except httpx.HTTPError as exc:
             raise ExternalAPIError("Weather API request failed") from exc

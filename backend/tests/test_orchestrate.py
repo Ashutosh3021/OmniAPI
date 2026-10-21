@@ -40,27 +40,37 @@ def _news_payload() -> dict:
 
 
 @contextmanager
-def _orchestrate_mocks(fetch_side_effect=None, cache_get_side_effect=None):
+def _orchestrate_mocks(fetch_map=None, fetch_side_effect=None, cache_get_side_effect=None):
+    """Patch the provider clients so no real upstream call is made.
+
+    The orchestrator now calls the providers directly (no broker round trip),
+    so the client classes are the seam to patch. ``fetch_map`` maps a service
+    name to the payload that service should return; ``fetch_side_effect`` is a
+    callable ``(client, params)`` for tests that need per-call behaviour.
+    """
+    from app.external_apis.news_api import NewsAPIClient
+    from app.external_apis.stock_api import StockAPIClient
+    from app.external_apis.weather_api import WeatherAPIClient
+
     get_kwargs: dict = {}
     if cache_get_side_effect is not None:
         get_kwargs["side_effect"] = cache_get_side_effect
     else:
         get_kwargs["return_value"] = None
 
-    fetch_patch = patch(
-        "app.tasks.external_api_tasks._run_fetch",
-        side_effect=fetch_side_effect,
-    )
+    async def _fake_fetch(self, params):
+        if fetch_side_effect is not None:
+            return fetch_side_effect(self, params)
+        if fetch_map is not None:
+            return fetch_map[self.service_name]
+        raise AssertionError(f"unexpected provider call to {self.service_name}")
 
     with (
-        fetch_patch,
+        patch.object(WeatherAPIClient, "fetch", new=_fake_fetch),
+        patch.object(NewsAPIClient, "fetch", new=_fake_fetch),
+        patch.object(StockAPIClient, "fetch", new=_fake_fetch),
         patch.object(CacheService, "get", new_callable=AsyncMock, **get_kwargs),
         patch.object(CacheService, "set", new_callable=AsyncMock),
-        patch.object(CacheService, "close", new_callable=AsyncMock),
-        patch(
-            "asyncio.to_thread",
-            side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs),
-        ),
     ):
         yield
 
@@ -91,7 +101,7 @@ def configured_weather_and_news(client, auth_headers) -> None:
 def test_orchestrate_weather_success(
     client, auth_headers, configured_weather, db_session
 ) -> None:
-    with _orchestrate_mocks(fetch_side_effect=[_weather_payload()]):
+    with _orchestrate_mocks(fetch_map={"weather": _weather_payload()}):
         response = client.post(
             "/api/v1/orchestrate",
             headers=auth_headers,
@@ -107,6 +117,7 @@ def test_orchestrate_weather_success(
     assert data["results"][0]["cache_hit"] is False
     assert response.headers["X-RateLimit-Limit"]
     assert response.headers["X-RateLimit-Remaining"]
+    assert response.headers["X-Cache"] == "MISS"
 
     logs = db_session.scalars(select(UsageLog)).all()
     assert len(logs) == 1
@@ -117,7 +128,7 @@ def test_orchestrate_cache_hit_on_second_request(
     client, auth_headers, configured_weather, db_session
 ) -> None:
     with _orchestrate_mocks(
-        fetch_side_effect=[_weather_payload()],
+        fetch_map={"weather": _weather_payload()},
         cache_get_side_effect=[None, _weather_payload()],
     ):
         body = {
@@ -141,7 +152,7 @@ def test_orchestrate_multiple_services_parallel(
     client, auth_headers, configured_weather_and_news
 ) -> None:
     with _orchestrate_mocks(
-        fetch_side_effect=[_weather_payload(), _news_payload()],
+        fetch_map={"weather": _weather_payload(), "news": _news_payload()},
     ):
         response = client.post(
             "/api/v1/orchestrate",
@@ -168,9 +179,9 @@ def test_orchestrate_partial_failure(
     from app.external_apis.weather_api import WeatherAPIClient
     from app.utils.exceptions import ExternalAPIError
 
-    def fetch_side_effect(client_cls, _encrypted_key, _params):
-        if client_cls is WeatherAPIClient:
-            raise ExternalAPIError("Weather API unavailable")
+    def fetch_side_effect(client, _params):
+        if isinstance(client, WeatherAPIClient):
+            raise ExternalAPIError("Weather API unavailable", retryable=False)
         return _news_payload()
 
     with _orchestrate_mocks(fetch_side_effect=fetch_side_effect):
@@ -190,6 +201,88 @@ def test_orchestrate_partial_failure(
     results = {r["service"]: r for r in response.json()["results"]}
     assert results["weather"]["success"] is False
     assert results["news"]["success"] is True
+
+
+def test_orchestrate_fans_out_in_parallel(
+    client, auth_headers, configured_weather_and_news
+) -> None:
+    """The total time must be the slowest single call, not the sum of both."""
+    import asyncio
+    import time
+
+    from app.external_apis.news_api import NewsAPIClient
+    from app.external_apis.weather_api import WeatherAPIClient
+
+    async def fetch_side_effect(client, _params):
+        await asyncio.sleep(0.2)
+        if isinstance(client, WeatherAPIClient):
+            return _weather_payload()
+        return _news_payload()
+
+    with _orchestrate_mocks(fetch_side_effect=fetch_side_effect):
+        start = time.monotonic()
+        response = client.post(
+            "/api/v1/orchestrate",
+            headers=auth_headers,
+            json={
+                "services": ["weather", "news"],
+                "params": {
+                    "weather": {"city": "London"},
+                    "news": {"query": "AI"},
+                },
+            },
+        )
+        elapsed = time.monotonic() - start
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    per_service = sum(r["response_time_ms"] for r in results)
+    # Sequential execution would take at least the sum of the two calls.
+    assert per_service >= 400
+    assert response.json()["total_time_ms"] < per_service
+
+
+def test_orchestrate_rejects_invalid_params(client, auth_headers, configured_weather) -> None:
+    """Params are validated against the published schema for the service."""
+    with _orchestrate_mocks():
+        response = client.post(
+            "/api/v1/orchestrate",
+            headers=auth_headers,
+            json={
+                "services": ["weather"],
+                "params": {"weather": {"nope": "x"}},
+            },
+        )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert detail[0]["loc"][:3] == ["body", "params", "weather"]
+
+
+def test_orchestrate_rejects_missing_required_params(
+    client, auth_headers, configured_weather
+) -> None:
+    with _orchestrate_mocks():
+        response = client.post(
+            "/api/v1/orchestrate",
+            headers=auth_headers,
+            json={"services": ["weather"], "params": {"weather": {}}},
+        )
+
+    assert response.status_code == 422
+
+
+def test_orchestrate_rejects_unsupported_service(client, auth_headers) -> None:
+    with _orchestrate_mocks():
+        response = client.post(
+            "/api/v1/orchestrate",
+            headers=auth_headers,
+            json={"services": ["stripe"], "params": {}},
+        )
+
+    assert response.status_code == 404
+    assert "Supported services" in response.json()["detail"]
 
 
 def test_orchestrate_unconfigured_service_returns_404(client, auth_headers) -> None:
@@ -220,7 +313,7 @@ def test_orchestrate_with_api_key(
     )
     raw_key = create.json()["raw_key"]
 
-    with _orchestrate_mocks(fetch_side_effect=[_weather_payload()]):
+    with _orchestrate_mocks(fetch_map={"weather": _weather_payload()}):
         response = client.post(
             "/api/v1/orchestrate",
             headers={"X-API-Key": raw_key},

@@ -1,4 +1,4 @@
-import { forwardRef } from "react";
+import { forwardRef, useId } from "react";
 import { cn } from "@/lib/utils";
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -9,52 +9,51 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, label, error, hint, leftIcon, id, ...props }, ref) => {
-    const inputId = id ?? props.name;
+  ({ className, label, error, hint, leftIcon, id, name, ...props }, ref) => {
+    const generated = useId();
+    const inputId = id ?? name ?? generated;
+    const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
 
     return (
-      <div className="flex flex-col gap-sm w-full">
+      <div className="flex w-full flex-col gap-1.5">
         {label && (
-          <label
-            htmlFor={inputId}
-            className="text-label-md font-medium text-dark-gray dark:text-outline"
-          >
+          <label htmlFor={inputId} className="text-meta font-medium text-ink">
             {label}
           </label>
         )}
         <div className="relative">
           {leftIcon && (
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-light-gray">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted">
               {leftIcon}
             </div>
           )}
           <input
             ref={ref}
             id={inputId}
+            name={name}
             className={cn(
-              "w-full bg-white dark:bg-surface border border-outline-variant dark:border-outline rounded px-md py-sm text-body-md text-on-surface input-glow transition-all placeholder:text-outline",
+              "field",
               leftIcon && "pl-10",
-              error && "border-error",
               className
             )}
             aria-invalid={!!error}
-            aria-describedby={error ? `${inputId}-error` : undefined}
-            // Suppress hydration warnings for attributes injected by password managers
+            aria-describedby={describedBy}
+            // Password managers inject attributes before hydration; the markup is unchanged.
             suppressHydrationWarning
             {...props}
           />
         </div>
-        {error && (
-          <p id={`${inputId}-error`} className="text-body-sm text-error" role="alert">
+        {error ? (
+          <p id={`${inputId}-error`} className="text-meta text-bad" role="alert">
             {error}
           </p>
-        )}
-        {hint && !error && (
-          <p className="text-body-sm text-on-surface-variant">{hint}</p>
-        )}
+        ) : hint ? (
+          <p id={`${inputId}-hint`} className="text-meta text-muted">
+            {hint}
+          </p>
+        ) : null}
       </div>
     );
   }
 );
-
 Input.displayName = "Input";

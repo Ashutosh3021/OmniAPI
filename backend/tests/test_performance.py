@@ -26,6 +26,7 @@ async def test_rate_limit_blocks_when_exceeded() -> None:
     with patch("app.middleware.rate_limit.RateLimiter") as mock_cls:
         instance = mock_cls.return_value
         instance.is_allowed = AsyncMock(return_value=(False, 0))
+        instance.retry_after_seconds = AsyncMock(return_value=120)
         instance.close = AsyncMock()
 
         with pytest.raises(HTTPException) as exc_info:
@@ -33,6 +34,7 @@ async def test_rate_limit_blocks_when_exceeded() -> None:
 
     assert exc_info.value.status_code == 429
     assert exc_info.value.headers["X-RateLimit-Remaining"] == "0"
+    assert "Rate limit exceeded" in exc_info.value.detail
 
 
 def test_free_tier_limit_is_100() -> None:
@@ -45,7 +47,6 @@ def test_free_tier_limit_is_100() -> None:
     )
     assert get_tier_limit(user) == 100
 
-
 def test_celery_task_retries_then_fails() -> None:
     from celery.exceptions import MaxRetriesExceededError
 
@@ -54,8 +55,15 @@ def test_celery_task_retries_then_fails() -> None:
     task.retry.side_effect = MaxRetriesExceededError()
 
     with patch("app.tasks.external_api_tasks._run_fetch") as mock_fetch:
-        mock_fetch.side_effect = ExternalAPIError("upstream down")
-        result = _execute_task(task, "weather", "1", "encrypted", {"city": "London"})
+        mock_fetch.side_effect = ExternalAPIError("upstream down", retryable=False)
+
+        with patch("app.db.session.SessionLocal") as mock_session_factory:
+            session = mock_session_factory.return_value
+            service = MagicMock()
+            service.api_key_encrypted = "encrypted"
+            session.get.return_value = service
+
+            result = _execute_task(task, "weather", 1, {"city": "London"})
 
     assert result["success"] is False
     assert "upstream" in result["error"]
@@ -65,6 +73,7 @@ def test_orchestrate_rate_limit_429(client, auth_headers, configured_weather) ->
     with patch("app.middleware.rate_limit.RateLimiter") as mock_cls:
         instance = mock_cls.return_value
         instance.is_allowed = AsyncMock(return_value=(False, 0))
+        instance.retry_after_seconds = AsyncMock(return_value=60)
         instance.close = AsyncMock()
 
         response = client.post(

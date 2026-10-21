@@ -1,17 +1,24 @@
+import type { Metadata } from "next";
 import { CreateAPIKeyForm } from "@/components/forms/CreateAPIKeyForm";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Card } from "@/components/shared/Card";
+
+export const metadata: Metadata = {
+  title: "Create an API key",
+  description:
+    "Mint an OmniAPI key for your application, with an optional expiry date. The raw key is shown once.",
+};
 
 export default function CreateApiKeyPage() {
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-xl">
       <PageHeader
-        title="Create API Key"
-        description="Generate a new key to authenticate requests from your external applications to OmniAPI."
+        meta="shown once"
+        title="Create an API key"
+        description="One key per application. It carries the permissions you need and is sent in the X-API-Key header."
       />
-      <Card>
+      <div className="panel p-5 md:p-7">
         <CreateAPIKeyForm />
-      </Card>
+      </div>
     </div>
   );
 }

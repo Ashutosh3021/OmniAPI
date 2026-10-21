@@ -19,6 +19,11 @@ def get_tier_limit(user: User) -> int:
     return limits.get(tier, settings.rate_limit_free)
 
 
+def tier_name(user: User) -> str:
+    """Return the user's tier label for error messages."""
+    return user.tier.value if hasattr(user.tier, "value") else str(user.tier)
+
+
 async def apply_rate_limit(
     request: Request,
     user: User,
@@ -27,25 +32,31 @@ async def apply_rate_limit(
     """Enforce sliding-window rate limits and attach header values to request state."""
     limiter = RateLimiter()
     limit = get_tier_limit(user)
-    try:
-        allowed, remaining = await limiter.is_allowed(
-            tenant_id=str(user.user_id),
-            api_key_id=api_key_id,
-            limit=limit,
-        )
-    finally:
-        await limiter.close()
+    allowed, remaining = await limiter.is_allowed(
+        tenant_id=str(user.user_id),
+        api_key_id=api_key_id,
+        limit=limit,
+    )
 
     request.state.rate_limit_limit = str(limit)
     request.state.rate_limit_remaining = str(remaining)
 
     if not allowed:
+        retry_after = await limiter.retry_after_seconds(
+            tenant_id=str(user.user_id),
+            api_key_id=api_key_id,
+        )
+        minutes = max(1, round(retry_after / 60))
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Rate limit exceeded",
+            detail=(
+                f"Rate limit exceeded for the {tier_name(user)} tier "
+                f"({limit} requests/hour). Try again in about {minutes} minute"
+                f"{'s' if minutes != 1 else ''}."
+            ),
             headers={
                 "X-RateLimit-Remaining": "0",
                 "X-RateLimit-Limit": str(limit),
-                "Retry-After": str(RATE_LIMIT_WINDOW_SECONDS),
+                "Retry-After": str(retry_after or RATE_LIMIT_WINDOW_SECONDS),
             },
         )

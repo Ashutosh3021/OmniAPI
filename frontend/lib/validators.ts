@@ -27,10 +27,16 @@ export const apiKeySchema = z.object({
 });
 
 export const externalServiceSchema = z.object({
-  name: z.string().min(2, "Service name is required"),
-  serviceType: z.string().min(1, "Select a provider"),
-  apiKey: z.string().min(1, "API key is required"),
-  rateLimit: z.number().min(0).optional(),
+  service_name: z.enum(["weather", "news", "stock"], {
+    error: "Select a provider",
+  }),
+  api_key: z.string().min(1, "The provider key is required"),
+  max_calls_per_hour: z
+    .number()
+    .int("Use a whole number of calls")
+    .min(1, "At least one call per hour")
+    .max(100000, "That is more calls per hour than the gateway allows")
+    .optional(),
 });
 
 export const webhookSchema = z.object({

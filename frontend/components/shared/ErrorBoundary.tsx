@@ -1,6 +1,6 @@
 "use client";
 
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "./Button";
 
 interface Props {
@@ -23,14 +23,8 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Log to error monitoring service (Sentry, LogRocket, etc.)
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("ErrorBoundary caught:", error, errorInfo);
-    
-    // In production, send to monitoring service:
-    // if (process.env.NODE_ENV === 'production') {
-    //   Sentry.captureException(error, { extra: errorInfo });
-    // }
   }
 
   render() {
@@ -40,12 +34,15 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       return (
-        <div className="min-h-screen flex items-center justify-center p-lg">
-          <div className="max-w-md w-full text-center space-y-lg">
-            <div className="text-error text-6xl">⚠️</div>
-            <h1 className="text-heading-lg text-on-surface">Something went wrong</h1>
-            <p className="text-body-md text-on-surface-variant">
-              {this.state.error?.message || "An unexpected error occurred"}
+        <div className="flex min-h-dvh items-center justify-center bg-ground px-4">
+          <div className="panel w-full max-w-md p-6">
+            <p className="label-wire mb-2 text-bad">error</p>
+            <h1 className="t-heading mb-2 text-ink">
+              Something went wrong
+            </h1>
+            <p className="mb-6 text-ui text-muted">
+              {this.state.error?.message ||
+                "An unexpected error occurred while rendering this page."}
             </p>
             <Button
               onClick={() => {
@@ -53,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 window.location.href = "/dashboard";
               }}
             >
-              Return to Dashboard
+              Back to the dashboard
             </Button>
           </div>
         </div>

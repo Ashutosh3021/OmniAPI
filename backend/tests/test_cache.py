@@ -9,10 +9,10 @@ from app.services.cache_service import CacheService
 
 @pytest.fixture
 async def cache_service(fake_redis, monkeypatch: pytest.MonkeyPatch) -> CacheService:
-    import app.services.cache_service as cache_mod
+    import app.services.redis_client as redis_client_mod
 
     monkeypatch.setattr(
-        cache_mod.aioredis,
+        redis_client_mod.aioredis,
         "from_url",
         lambda *args, **kwargs: fake_redis,
     )

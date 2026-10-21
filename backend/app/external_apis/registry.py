@@ -1,11 +1,11 @@
-"""Registry of supported external API clients (must match TASK_REGISTRY keys)."""
+"""Registry of supported external API clients.
 
-from app.external_apis.news_api import NewsAPIClient
-from app.external_apis.stock_api import StockAPIClient
-from app.external_apis.weather_api import WeatherAPIClient
+Derived from the service catalog so the client map and the published
+catalogue can never drift apart.
+"""
+
+from app.services.service_catalog import SERVICE_CATALOG
 
 CLIENT_REGISTRY: dict[str, type] = {
-    "weather": WeatherAPIClient,
-    "news": NewsAPIClient,
-    "stock": StockAPIClient,
+    name: definition.client_cls for name, definition in SERVICE_CATALOG.items()
 }

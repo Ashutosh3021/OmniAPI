@@ -9,15 +9,27 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.config import get_settings
+from app.external_apis.client_pool import close_client
 from app.external_apis.registry import CLIENT_REGISTRY
 from app.middleware.error_handler import register_exception_handlers
 from app.middleware.logging_middleware import LoggingMiddleware
-from app.services.orchestrator_service import TASK_REGISTRY
+from app.schemas.external_service import ExternalServiceName
+from app.services.redis_client import close_redis
+from app.services.service_catalog import SERVICE_CATALOG
+from app.tasks.external_api_tasks import TASK_REGISTRY
 
 settings = get_settings()
 
-assert set(CLIENT_REGISTRY.keys()) == set(TASK_REGISTRY.keys()), (
-    "CLIENT_REGISTRY and TASK_REGISTRY must have identical service keys"
+assert set(CLIENT_REGISTRY.keys()) == set(SERVICE_CATALOG.keys()), (
+    "CLIENT_REGISTRY and SERVICE_CATALOG must have identical service keys"
+)
+
+assert set(SERVICE_CATALOG.keys()) == {e.value for e in ExternalServiceName}, (
+    "SERVICE_CATALOG and ExternalServiceName must describe the same services"
+)
+
+assert set(TASK_REGISTRY.keys()) == set(SERVICE_CATALOG.keys()), (
+    "TASK_REGISTRY and SERVICE_CATALOG must have identical service keys"
 )
 
 logging.basicConfig(
@@ -32,6 +44,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application startup and shutdown hooks."""
     logger.info("Starting %s v%s (%s)", settings.api_title, settings.api_version, settings.environment)
     yield
+    await close_client()
+    await close_redis()
     logger.info("Shutting down %s", settings.api_title)
 
 

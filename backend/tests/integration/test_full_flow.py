@@ -10,6 +10,10 @@ from app.services.cache_service import CacheService
 def _orchestrate_mocks(weather_payload: dict, news_payload: dict):
     from unittest.mock import AsyncMock
 
+    from app.external_apis.news_api import NewsAPIClient
+    from app.external_apis.stock_api import StockAPIClient
+    from app.external_apis.weather_api import WeatherAPIClient
+
     cache_store: dict[str, dict] = {}
 
     async def fake_get(key: str):
@@ -23,28 +27,19 @@ def _orchestrate_mocks(weather_payload: dict, news_payload: dict):
         "news": news_payload,
     }
 
-    def fetch_side_effect(client_cls, _encrypted_key, _params):
-        from app.external_apis.news_api import NewsAPIClient
-        from app.external_apis.weather_api import WeatherAPIClient
-
-        if client_cls is WeatherAPIClient:
+    async def fake_fetch(self, _params):
+        if isinstance(self, WeatherAPIClient):
             return fetch_map["weather"]
-        if client_cls is NewsAPIClient:
+        if isinstance(self, NewsAPIClient):
             return fetch_map["news"]
         raise ValueError("unexpected client")
 
     with (
-        patch(
-            "app.tasks.external_api_tasks._run_fetch",
-            side_effect=fetch_side_effect,
-        ),
+        patch.object(WeatherAPIClient, "fetch", new=fake_fetch),
+        patch.object(NewsAPIClient, "fetch", new=fake_fetch),
+        patch.object(StockAPIClient, "fetch", new=fake_fetch),
         patch.object(CacheService, "get", side_effect=fake_get),
         patch.object(CacheService, "set", side_effect=fake_set),
-        patch.object(CacheService, "close", new_callable=AsyncMock),
-        patch(
-            "asyncio.to_thread",
-            side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs),
-        ),
         patch("app.services.orchestrator_service.WebhookService") as mock_wh,
     ):
         mock_wh.return_value.dispatch_event = MagicMock()

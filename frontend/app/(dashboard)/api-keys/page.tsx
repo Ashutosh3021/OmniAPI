@@ -1,13 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { APIKeysTable } from "@/components/tables/APIKeysTable";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Button } from "@/components/shared/Button";
+import { ButtonLink } from "@/components/shared/Button";
 import { Spinner } from "@/components/shared/Spinner";
-import { Card } from "@/components/shared/Card";
 import { api } from "@/lib/api";
 import { useNotification } from "@/context/NotificationContext";
 import type { ApiKey } from "@/types";
@@ -23,9 +21,10 @@ export default function ApiKeysPage() {
       const data = await api.get<ApiKey[]>("/api-keys");
       setKeys(data);
     } catch {
-      notify("Failed to load API keys", "error");
+      notify("Could not load your API keys", "error");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [notify]);
 
   useEffect(() => {
@@ -35,30 +34,32 @@ export default function ApiKeysPage() {
   const handleDelete = async (id: string | number) => {
     try {
       await api.delete(`/api-keys/${id}`);
-      notify("API key permanently deleted", "success");
+      notify("API key deleted", "success");
       loadKeys();
     } catch {
-      notify("Failed to delete key", "error");
+      notify("Could not delete that key", "error");
     }
   };
 
   return (
     <>
       <PageHeader
-        title="API Keys"
-        description="Manage authentication keys for your applications"
+        meta={loading ? undefined : `${keys.length} ${keys.length === 1 ? "key" : "keys"}`}
+        title="API keys"
+        description="One key per application. Each one carries its own permissions and an optional expiry date."
         action={
-          <Link href="/api-keys/create">
-            <Button>
-              <Plus className="h-4 w-4" />
-              Create Key
-            </Button>
-          </Link>
+          <ButtonLink href="/api-keys/create" size="sm">
+            <Plus className="h-4 w-4" aria-hidden />
+            Create key
+          </ButtonLink>
         }
       />
-      <Card padding="sm">
-        {loading ? <Spinner /> : <APIKeysTable keys={keys} onDelete={handleDelete} />}
-      </Card>
+
+      {loading ? (
+        <Spinner label="Loading keys" />
+      ) : (
+        <APIKeysTable keys={keys} onDelete={handleDelete} />
+      )}
     </>
   );
 }

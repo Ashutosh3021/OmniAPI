@@ -7,12 +7,11 @@ export interface ApiKey {
   raw_key?: string; // only present in APIKeyCreatedResponse
 }
 
+/** Mirrors the backend ExternalServiceResponse. */
 export interface ExternalService {
-  id: string;
-  name: string;
-  serviceType: string;
-  status: "connected" | "error" | "disconnected";
-  rateLimit: number | null;
-  createdAt: string;
-  lastSync: string;
+  service_id: number;
+  service_name: string;
+  max_calls_per_hour: number;
+  status: "active" | "inactive" | "error";
+  created_at: string;
 }

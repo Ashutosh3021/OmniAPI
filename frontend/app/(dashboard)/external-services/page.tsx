@@ -1,13 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState, useCallback } from "react";
 import { Plus } from "lucide-react";
 import { ExternalServicesTable } from "@/components/tables/ExternalServicesTable";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Button } from "@/components/shared/Button";
+import { ButtonLink } from "@/components/shared/Button";
 import { Spinner } from "@/components/shared/Spinner";
-import { Card } from "@/components/shared/Card";
 import { api } from "@/lib/api";
 import { useNotification } from "@/context/NotificationContext";
 import type { ExternalService } from "@/types";
@@ -22,46 +20,45 @@ export default function ExternalServicesPage() {
     try {
       setServices(await api.get<ExternalService[]>("/external-services"));
     } catch {
-      notify("Failed to load services", "error");
+      notify("Could not load your services", "error");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [notify]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: number) => {
     try {
       await api.delete(`/external-services/${id}`);
       notify("Service removed", "success");
       load();
     } catch {
-      notify("Failed to delete service", "error");
+      notify("Could not remove that service", "error");
     }
   };
 
   return (
     <>
       <PageHeader
-        title="External Services"
-        description="Connect and manage third-party integrations"
+        meta={loading ? undefined : `${services.length} connected`}
+        title="External services"
+        description="The third-party APIs OmniAPI can call for you. Each provider key is encrypted at rest and never appears in a response."
         action={
-          <Link href="/external-services/create">
-            <Button>
-              <Plus className="h-4 w-4" />
-              Add Service
-            </Button>
-          </Link>
+          <ButtonLink href="/external-services/create" size="sm">
+            <Plus className="h-4 w-4" aria-hidden />
+            Add service
+          </ButtonLink>
         }
       />
-      <Card padding="sm">
-        {loading ? (
-          <Spinner />
-        ) : (
-          <ExternalServicesTable services={services} onDelete={handleDelete} />
-        )}
-      </Card>
+
+      {loading ? (
+        <Spinner label="Loading services" />
+      ) : (
+        <ExternalServicesTable services={services} onDelete={handleDelete} />
+      )}
     </>
   );
 }

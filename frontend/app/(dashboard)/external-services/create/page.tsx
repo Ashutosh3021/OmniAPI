@@ -1,17 +1,24 @@
+import type { Metadata } from "next";
 import { CreateExternalServiceForm } from "@/components/forms/CreateExternalServiceForm";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Card } from "@/components/shared/Card";
+
+export const metadata: Metadata = {
+  title: "Connect a provider",
+  description:
+    "Register a third-party provider key. OmniAPI encrypts it and calls the provider on your behalf.",
+};
 
 export default function CreateExternalServicePage() {
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-xl">
       <PageHeader
-        title="Add External Service"
-        description="Connect a third-party provider to your OmniAPI workspace."
+        meta="encrypted at rest"
+        title="Connect a provider"
+        description="A connected provider becomes a branch you can call from the orchestrate endpoint."
       />
-      <Card>
+      <div className="panel p-5 md:p-7">
         <CreateExternalServiceForm />
-      </Card>
+      </div>
     </div>
   );
 }

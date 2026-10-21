@@ -7,8 +7,9 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import { ChartTooltip } from "./LineChart";
 
-const COLORS = ["#06B6D4", "#94A3B8"];
+const COLORS = ["var(--c-accent)", "var(--c-line-strong)"];
 
 interface PieChartProps {
   data: { name: string; value: number }[];
@@ -23,16 +24,17 @@ export function CachePieChart({ data, height = 220 }: PieChartProps) {
           data={data}
           cx="50%"
           cy="50%"
-          innerRadius={50}
-          outerRadius={80}
+          innerRadius="62%"
+          outerRadius="88%"
           paddingAngle={2}
           dataKey="value"
+          stroke="none"
         >
           {data.map((_, index) => (
             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
           ))}
         </Pie>
-        <Tooltip formatter={(value) => `${String(value)}%`} />
+        <Tooltip content={<ChartTooltip />} />
       </RechartsPieChart>
     </ResponsiveContainer>
   );

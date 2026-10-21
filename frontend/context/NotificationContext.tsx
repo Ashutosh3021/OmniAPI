@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useRef,
   useState,
 } from "react";
 import { Toast } from "@/components/shared/Toast";
@@ -30,13 +31,17 @@ export function NotificationProvider({
   children: React.ReactNode;
 }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const counter = useRef(0);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const notify = useCallback((message: string, type: ToastType = "info") => {
-    const id = `toast_${Date.now()}`;
+    counter.current += 1;
+    const id = `toast_${counter.current}`;
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
+    timers.current.push(timer);
   }, []);
 
   const dismiss = useCallback((id: string) => {
@@ -47,16 +52,17 @@ export function NotificationProvider({
     <NotificationContext.Provider value={{ notify }}>
       {children}
       <div
-        className="fixed bottom-20 md:bottom-6 right-4 z-[100] flex flex-col gap-2"
+        className="pointer-events-none fixed bottom-5 right-4 z-[90] flex flex-col items-end gap-2"
         aria-live="polite"
       >
         {toasts.map((toast) => (
-          <Toast
-            key={toast.id}
-            message={toast.message}
-            type={toast.type}
-            onDismiss={() => dismiss(toast.id)}
-          />
+          <div key={toast.id} className="pointer-events-auto">
+            <Toast
+              message={toast.message}
+              type={toast.type}
+              onDismiss={() => dismiss(toast.id)}
+            />
+          </div>
         ))}
       </div>
     </NotificationContext.Provider>

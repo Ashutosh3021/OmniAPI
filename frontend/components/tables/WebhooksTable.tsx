@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Trash2 } from "lucide-react";
 import { Badge } from "@/components/shared/Badge";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Webhook } from "@/types";
 
@@ -14,80 +15,45 @@ interface WebhooksTableProps {
 export function WebhooksTable({ webhooks, onDelete }: WebhooksTableProps) {
   if (webhooks.length === 0) {
     return (
-      <p className="text-body-md text-on-surface-variant py-xl text-center">
-        No webhooks configured.
-      </p>
+      <EmptyState
+        title="No webhooks configured."
+        description="Subscribe to an event and OmniAPI will push it to your server the moment it happens, with retries when a delivery fails."
+      />
     );
   }
 
   return (
-    <>
-      <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-surface-container-low border-b border-outline">
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">URL</th>
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Event Type</th>
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Status</th>
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Created</th>
-              <th className="py-sm px-lg text-label-sm text-on-surface-variant uppercase font-semibold">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {webhooks.map((wh) => (
-              <tr key={wh.webhook_id} className="border-b border-outline-variant hover:bg-surface-container-low">
-                <td className="py-md px-lg">
-                  <Link
-                    href={`/webhooks/${wh.webhook_id}`}
-                    className="font-mono text-code text-secondary-fixed hover:underline truncate max-w-[240px] block"
-                  >
-                    {wh.url}
-                  </Link>
-                </td>
-                <td className="py-md px-lg text-body-sm">{wh.event_type}</td>
-                <td className="py-md px-lg">
-                  <Badge variant={wh.is_active ? "success" : "neutral"}>
-                    {wh.is_active ? "Active" : "Paused"}
-                  </Badge>
-                </td>
-                <td className="py-md px-lg text-body-sm text-on-surface-variant">
-                  {formatRelativeTime(wh.created_at)}
-                </td>
-                <td className="py-md px-lg">
-                  {onDelete && (
-                    <button
-                      type="button"
-                      onClick={() => onDelete(wh.webhook_id)}
-                      className="p-1 hover:text-error"
-                      aria-label={`Delete webhook ${wh.webhook_id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="md:hidden space-y-md">
-        {webhooks.map((wh) => (
-          <Link
-            key={wh.webhook_id}
-            href={`/webhooks/${wh.webhook_id}`}
-            className="block border border-outline rounded-xl p-md bg-white dark:bg-surface"
-          >
-            <div className="flex justify-between mb-sm">
-              <span className="font-mono text-code text-on-surface-variant truncate">{wh.url}</span>
-              <Badge variant={wh.is_active ? "success" : "neutral"}>
-                {wh.is_active ? "Active" : "Paused"}
-              </Badge>
-            </div>
-            <p className="text-body-sm text-on-surface-variant">{wh.event_type}</p>
+    <ul className="border-t border-ink/12">
+      {webhooks.map((wh) => (
+        <li
+          key={wh.webhook_id}
+          className="branch-row group flex items-center gap-3 border-b border-ink/12 py-3.5 sm:gap-4"
+        >
+          <Link href={`/webhooks/${wh.webhook_id}`} className="min-w-0 flex-1">
+            <span className="block truncate font-mono text-[0.8125rem] text-ink transition-colors group-hover:text-accent">
+              {wh.url}
+            </span>
+            <span className="mt-1 block truncate font-mono text-micro text-muted">
+              {wh.event_type} · created {formatRelativeTime(wh.created_at)}
+            </span>
           </Link>
-        ))}
-      </div>
-    </>
+
+          <Badge tone={wh.is_active ? "ok" : "neutral"}>
+            {wh.is_active ? "active" : "paused"}
+          </Badge>
+
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(wh.webhook_id)}
+              className="shrink-0 rounded p-2 text-muted transition-colors hover:text-bad"
+              aria-label={`Delete webhook ${wh.webhook_id}`}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

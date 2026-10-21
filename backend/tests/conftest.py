@@ -57,6 +57,21 @@ def _clear_settings_cache() -> Generator[None, None, None]:
 
 
 @pytest.fixture(autouse=True)
+def _reset_shared_clients() -> Generator[None, None, None]:
+    """Reset the process-wide shared clients between tests.
+
+    The Redis client is cached at module level, so without this a fake Redis
+    created in one test would leak into the next — bound to the previous
+    test's (now closed) event loop.
+    """
+    import app.services.redis_client as redis_client_mod
+
+    redis_client_mod._redis = None
+    yield
+    redis_client_mod._redis = None
+
+
+@pytest.fixture(autouse=True)
 def _mock_rate_limiter(request: pytest.FixtureRequest) -> Generator[None, None, None]:
     """Allow all requests through rate limiting except dedicated rate-limiter tests."""
     if request.node.get_closest_marker("uses_redis"):
@@ -65,7 +80,10 @@ def _mock_rate_limiter(request: pytest.FixtureRequest) -> Generator[None, None, 
     with patch("app.middleware.rate_limit.RateLimiter") as mock_cls:
         instance = mock_cls.return_value
         instance.is_allowed = AsyncMock(return_value=(True, 99))
+        instance.is_allowed_service = AsyncMock(return_value=(True, 99))
+        instance.is_allowed_identifier = AsyncMock(return_value=(True, 99))
         instance.get_usage = AsyncMock(return_value={"requests_in_window": 0})
+        instance.retry_after_seconds = AsyncMock(return_value=60)
         instance.close = AsyncMock()
         yield
 
@@ -94,14 +112,17 @@ def _mock_redis_clients(request: pytest.FixtureRequest) -> Generator[None, None,
     redis_client.zcard = AsyncMock(return_value=0)
     redis_client.zadd = AsyncMock()
     redis_client.expire = AsyncMock()
+    redis_client.zrange = AsyncMock(return_value=[])
+    # The rate limiter uses an atomic Lua script; return a well-formed result.
+    redis_client.register_script = MagicMock(
+        return_value=AsyncMock(return_value=[1, 99, 0])
+    )
     redis_client.pipeline = MagicMock(return_value=redis_client)
     redis_client.execute = AsyncMock(return_value=[0, 0])
     redis_client.aclose = AsyncMock()
 
     with (
-        patch("app.services.cache_service.aioredis.from_url", return_value=redis_client),
-        patch("app.services.rate_limiter.aioredis.from_url", return_value=redis_client),
-        patch("app.api.v1.endpoints.health.aioredis.from_url", return_value=redis_client),
+        patch("app.services.redis_client.aioredis.from_url", return_value=redis_client),
     ):
         redis_client.ping = AsyncMock(return_value=True)
         yield

@@ -1,130 +1,192 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  LineChart,
-  Line,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  Legend,
-} from "recharts";
+import dynamic from "next/dynamic";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Spinner } from "@/components/shared/Spinner";
-import { Card } from "@/components/shared/Card";
-import { UsageLineChart } from "@/components/charts/LineChart";
-import { EndpointBarChart } from "@/components/charts/BarChart";
-import { CachePieChart } from "@/components/charts/PieChart";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { MetricStrip } from "@/components/dashboard/MetricStrip";
+import { ServiceTable } from "@/components/dashboard/ServiceTable";
 import { ExportReport } from "@/components/analytics/ExportReport";
 import { api } from "@/lib/api";
-import type { AnalyticsSummary, UsageDataPoint } from "@/types";
 import type { AnalyticsResponse } from "@/types/analytics";
 
-interface AnalyticsData {
-  summary: AnalyticsSummary;
-  usage: UsageDataPoint[];
-  cache: { name: string; value: number }[];
-  latency: { time: string; p50: number; p95: number }[];
-  endpoints: { endpoint: string; calls: number }[];
-}
+// Charts are code-heavy. They load only once there is data to draw.
+const VolumeBarChart = dynamic(
+  () => import("@/components/charts/BarChart").then((m) => m.VolumeBarChart),
+  {
+    ssr: false,
+    loading: () => <div className="h-[260px] w-full" aria-hidden />,
+  }
+);
+
+const CachePieChart = dynamic(
+  () => import("@/components/charts/PieChart").then((m) => m.CachePieChart),
+  {
+    ssr: false,
+    loading: () => <div className="h-[220px] w-full" aria-hidden />,
+  }
+);
+
+const PERIODS = [
+  { value: "last_24h", label: "24 hours" },
+  { value: "last_7d", label: "7 days" },
+  { value: "last_30d", label: "30 days" },
+] as const;
+
+type Period = (typeof PERIODS)[number]["value"];
 
 export default function AnalyticsPage() {
-  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [period, setPeriod] = useState<Period>("last_24h");
+  const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [summaryRes, usageRes] = await Promise.all([
-          api.get<AnalyticsSummary>("/analytics/summary"),
-          api.get<AnalyticsResponse>("/analytics/usage"),
-        ]);
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
 
-        const usage: UsageDataPoint[] = usageRes.by_service.map((s) => ({
-          time: s.service_name,
-          requests: s.call_count,
-        }));
+    api
+      .get<AnalyticsResponse>("/analytics/usage", { period })
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-        const cacheHitPct = summaryRes.cache_hit_percent;
-        const cache = [
-          { name: "Cache Hit", value: Math.round(cacheHitPct) },
-          { name: "Cache Miss", value: Math.round(100 - cacheHitPct) },
-        ];
+    return () => {
+      cancelled = true;
+    };
+  }, [period]);
 
-        const endpoints = usageRes.by_service.map((s) => ({
-          endpoint: s.service_name,
-          calls: s.call_count,
-        }));
+  const rows = data?.by_service ?? [];
+  const metrics = data?.metrics;
 
-        // Latency breakdown from per-service data
-        const latency = usageRes.by_service.map((s) => ({
-          time: s.service_name,
-          p50: Math.round(s.avg_response_time_ms * 0.85),
-          p95: Math.round(s.avg_response_time_ms * 1.4),
-        }));
-
-        setData({ summary: summaryRes, usage, cache, latency, endpoints });
-      } catch {
-        // errors surfaced by the api client
-      }
-      setLoading(false);
-    }
-    load();
-  }, []);
-
-  if (loading) return <Spinner />;
-  if (!data) return <p>Failed to load analytics</p>;
-
-  const exportData = data.endpoints.map((e) => ({
-    endpoint: e.endpoint,
-    calls: e.calls,
-    cacheHit: data.summary.cache_hit_percent,
+  const exportRows = rows.map((r) => ({
+    service: r.service_name,
+    calls: r.call_count,
+    cacheHits: r.cache_hits,
+    avgResponseMs: Math.round(r.avg_response_time_ms),
+    errors: r.error_count,
   }));
 
   return (
     <>
       <PageHeader
+        meta="from the usage log"
         title="Analytics"
-        description="Usage metrics, cache performance, and response times"
-        action={<ExportReport data={exportData} />}
+        description="Every number here comes from your own usage log."
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className="flex rounded border border-ink/15 p-0.5"
+              role="group"
+              aria-label="Time period"
+            >
+              {PERIODS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setPeriod(p.value)}
+                  aria-pressed={period === p.value}
+                  className={
+                    period === p.value
+                      ? "rounded-[3px] bg-ink px-2.5 py-1 font-mono text-micro uppercase tracking-[0.06em] text-ground transition-colors"
+                      : "rounded-[3px] px-2.5 py-1 font-mono text-micro uppercase tracking-[0.06em] text-muted transition-colors hover:text-ink"
+                  }
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <ExportReport data={exportRows} />
+          </div>
+        }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter mb-xl">
-        <Card>
-          <h3 className="text-headline-sm font-semibold mb-md">Request Volume</h3>
-          <UsageLineChart data={data.usage} height={240} />
-        </Card>
-        <Card>
-          <h3 className="text-headline-sm font-semibold mb-md">Cache Hit Rate</h3>
-          <CachePieChart data={data.cache} />
-          <p className="text-center text-display text-on-surface mt-sm">
-            {data.summary.cache_hit_percent}%
-          </p>
-        </Card>
-      </div>
+      {failed ? (
+        <EmptyState
+          title="The analytics API did not answer."
+          description="Reload to try again. If it keeps failing, check that the gateway is running."
+        />
+      ) : loading || !metrics ? (
+        <Spinner label="Loading analytics" />
+      ) : (
+        <>
+          <MetricStrip
+            className="mb-10"
+            metrics={[
+              {
+                label: "Total calls",
+                value: metrics.total_calls.toLocaleString(),
+                note: `${metrics.successful_calls.toLocaleString()} succeeded, ${metrics.failed_calls.toLocaleString()} failed`,
+              },
+              {
+                label: "Served from cache",
+                value: `${Math.round(metrics.cache_hit_rate * 100)}%`,
+                note: `${metrics.cache_hits.toLocaleString()} calls never reached the provider`,
+              },
+              {
+                label: "Average response",
+                value: `${Math.round(metrics.avg_response_time_ms)} ms`,
+                note: "Across every service in this period",
+              },
+              {
+                label: "Provider time saved",
+                value: `$${metrics.estimated_cost_saved.toFixed(4)}`,
+                note: "Estimated from the calls the cache absorbed",
+              },
+            ]}
+          />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
-        <Card>
-          <h3 className="text-headline-sm font-semibold mb-md">Response Latency (ms)</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={data.latency}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="time" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="p50" stroke="#06B6D4" name="p50" />
-              <Line type="monotone" dataKey="p95" stroke="#00687a" name="p95" />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card>
-        <Card>
-          <h3 className="text-headline-sm font-semibold mb-md">Top Endpoints</h3>
-          <EndpointBarChart data={data.endpoints} height={240} />
-        </Card>
-      </div>
+          <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+            <section className="panel p-5 md:p-7 lg:col-span-7">
+              <h2 className="t-subhead mb-1 text-ink">Calls per service</h2>
+              <p className="mb-4 text-meta text-muted">
+                Which providers took the traffic.
+              </p>
+              <VolumeBarChart
+                data={rows.map((r) => ({ label: r.service_name, value: r.call_count }))}
+                height={260}
+              />
+            </section>
+
+            <section className="panel flex flex-col p-5 md:p-7 lg:col-span-5">
+              <h2 className="t-subhead mb-1 text-ink">Cache share</h2>
+              <p className="mb-2 text-meta text-muted">
+                How much of the traffic Redis absorbed.
+              </p>
+              <div className="flex-1">
+                <CachePieChart
+                  data={[
+                    { name: "Cache hit", value: metrics.cache_hits },
+                    {
+                      name: "Cache miss",
+                      value: Math.max(
+                        metrics.total_calls - metrics.cache_hits,
+                        0
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+              <p className="mt-2 text-center text-[2rem] font-bold leading-none tracking-[-0.03em] num text-ink [font-variation-settings:'wdth'_108]">
+                {Math.round(metrics.cache_hit_rate * 100)}%
+              </p>
+            </section>
+          </div>
+
+          <section className="panel mt-6 p-5 md:p-7">
+            <h2 className="t-subhead mb-4 text-ink">Per service breakdown</h2>
+            <ServiceTable rows={rows} />
+          </section>
+        </>
+      )}
     </>
   );
 }

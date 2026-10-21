@@ -1,6 +1,6 @@
 """Orchestration endpoint."""
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -11,6 +11,18 @@ from app.services.orchestrator_service import OrchestratorService
 from app.utils.decorators import require_auth_or_api_key
 
 router = APIRouter()
+
+
+def _cache_state(results: list) -> str:
+    """Summarise the cache state of the response as HIT / MISS / PARTIAL."""
+    if not results:
+        return "MISS"
+    hits = sum(1 for r in results if r.cache_hit)
+    if hits == len(results):
+        return "HIT"
+    if hits == 0:
+        return "MISS"
+    return "PARTIAL"
 
 
 def _attach_rate_limit_headers(request: Request, response: Response, user: User) -> None:
@@ -29,11 +41,18 @@ async def orchestrate(
     body: OrchestrateRequest,
     request: Request,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth_or_api_key),
 ) -> OrchestrateResponse:
     """Orchestrate calls to one or more configured external services."""
     orchestrator = OrchestratorService(db=db, user=current_user)
     result = await orchestrator.orchestrate(body)
+
+    # Record usage after the response has been sent, so the caller is not
+    # held up by the write.
+    background_tasks.add_task(orchestrator.flush_usage)
+
     _attach_rate_limit_headers(request, response, current_user)
+    response.headers["X-Cache"] = _cache_state(result.results)
     return result

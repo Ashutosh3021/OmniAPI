@@ -1,15 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Mail, Lock } from "lucide-react";
 import { Button } from "@/components/shared/Button";
 import { Input } from "@/components/shared/Input";
 import { useAuth } from "@/hooks/useAuth";
 import { useNotification } from "@/context/NotificationContext";
 import { loginSchema, type LoginInput } from "@/lib/validators";
-import { useState } from "react";
 
 export function LoginForm() {
   const { login } = useAuth();
@@ -29,19 +28,19 @@ export function LoginForm() {
     const ok = await login(data);
     setLoading(false);
     if (ok) {
-      notify("Welcome back!", "success");
+      notify("Signed in", "success");
     } else {
-      notify("Invalid email or password", "error");
+      notify("That email and password did not match", "error");
     }
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-lg" noValidate>
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
       <Input
-        label="Email Address"
+        label="Email"
         type="email"
         autoComplete="email"
-        leftIcon={<Mail className="h-5 w-5" />}
+        placeholder="you@company.com"
         error={errors.email?.message}
         {...register("email")}
       />
@@ -49,25 +48,24 @@ export function LoginForm() {
         label="Password"
         type="password"
         autoComplete="current-password"
-        leftIcon={<Lock className="h-5 w-5" />}
         error={errors.password?.message}
         {...register("password")}
       />
+
       <div className="flex justify-end">
-        <Link
-          href="/forgot-password"
-          className="text-body-sm text-secondary-fixed hover:underline"
-        >
-          Forgot password?
+        <Link href="/forgot-password" className="link text-meta text-accent">
+          Forgot password
         </Link>
       </div>
+
       <Button type="submit" fullWidth loading={loading}>
-        Sign In
+        Sign in
       </Button>
-      <p className="text-center text-body-sm text-on-surface-variant">
-        Don&apos;t have an account?{" "}
-        <Link href="/signup" className="text-secondary-fixed font-medium hover:underline">
-          Sign up
+
+      <p className="text-center text-meta text-muted">
+        No account yet?{" "}
+        <Link href="/signup" className="link font-medium text-accent">
+          Create one
         </Link>
       </p>
     </form>

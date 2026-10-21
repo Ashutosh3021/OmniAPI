@@ -4,13 +4,23 @@ import { cn } from "@/lib/utils";
 interface SpinnerProps {
   className?: string;
   label?: string;
+  /** Fills the viewport instead of sitting at the top of the flow. */
+  full?: boolean;
 }
 
-export function Spinner({ className, label = "Loading" }: SpinnerProps) {
+export function Spinner({ className, label = "Loading", full }: SpinnerProps) {
   return (
-    <div className={cn("flex flex-col items-center justify-center gap-2 py-xl", className)} role="status">
-      <Loader2 className="h-8 w-8 animate-spin text-secondary-fixed" aria-hidden />
-      <span className="sr-only">{label}</span>
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex flex-col items-center justify-center gap-3 text-muted",
+        full ? "min-h-[60vh]" : "py-14",
+        className
+      )}
+    >
+      <Loader2 className="h-5 w-5 animate-spin text-accent" aria-hidden />
+      <span className="label-wire">{label}</span>
     </div>
   );
 }

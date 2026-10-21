@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Mail, Lock, User } from "lucide-react";
 import { Button } from "@/components/shared/Button";
 import { Input } from "@/components/shared/Input";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,29 +25,33 @@ export function SignupForm() {
 
   const onSubmit = async (data: SignupInput) => {
     setLoading(true);
-    const ok = await signup(data);
+    const ok = await signup({
+      name: data.name,
+      email: data.email,
+      password: data.password,
+    });
     setLoading(false);
     if (ok) {
-      notify("Account created successfully!", "success");
+      notify("Account created", "success");
     } else {
-      notify("Could not create account", "error");
+      notify("That account could not be created", "error");
     }
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-lg" noValidate>
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
       <Input
-        label="Full Name"
+        label="Name"
         autoComplete="name"
-        leftIcon={<User className="h-5 w-5" />}
+        placeholder="Ada Lovelace"
         error={errors.name?.message}
         {...register("name")}
       />
       <Input
-        label="Email Address"
+        label="Email"
         type="email"
         autoComplete="email"
-        leftIcon={<Mail className="h-5 w-5" />}
+        placeholder="you@company.com"
         error={errors.email?.message}
         {...register("email")}
       />
@@ -56,24 +59,25 @@ export function SignupForm() {
         label="Password"
         type="password"
         autoComplete="new-password"
-        leftIcon={<Lock className="h-5 w-5" />}
+        hint="At least 8 characters."
         error={errors.password?.message}
         {...register("password")}
       />
       <Input
-        label="Confirm Password"
+        label="Confirm password"
         type="password"
         autoComplete="new-password"
-        leftIcon={<Lock className="h-5 w-5" />}
         error={errors.confirmPassword?.message}
         {...register("confirmPassword")}
       />
+
       <Button type="submit" fullWidth loading={loading}>
-        Create Account
+        Create account
       </Button>
-      <p className="text-center text-body-sm text-on-surface-variant">
+
+      <p className="text-center text-meta text-muted">
         Already have an account?{" "}
-        <Link href="/login" className="text-secondary-fixed font-medium hover:underline">
+        <Link href="/login" className="link font-medium text-accent">
           Sign in
         </Link>
       </p>

@@ -30,70 +30,73 @@ export function CreateAPIKeyForm() {
   const onSubmit = async (data: ApiKeyInput) => {
     setLoading(true);
     try {
-      // Backend accepts { name, expires_at } and returns { ..., raw_key }
       const payload: { name: string; expires_at?: string } = { name: data.name };
       if (data.expires_at) {
-        // Convert date string (YYYY-MM-DD) to ISO-8601 datetime expected by the backend
         payload.expires_at = new Date(data.expires_at).toISOString();
       }
 
-      const result = await api.post<ApiKey & { raw_key: string }>("/api-keys", payload);
+      const result = await api.post<ApiKey & { raw_key: string }>(
+        "/api-keys",
+        payload
+      );
       if (result.raw_key) {
         setGeneratedKey(result.raw_key);
-        notify("API key created successfully", "success");
+        notify("Key created", "success");
       } else {
-        notify("Key created but secret was not returned — contact support", "error");
+        notify("The key was created but the secret was not returned", "error");
       }
     } catch {
-      notify("Failed to create API key", "error");
+      notify("Could not create the key", "error");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (generatedKey) {
     return (
-      <div className="space-y-md">
-        <p className="text-body-md text-on-surface-variant">
-          Copy this key now. You won&apos;t be able to see it again.
+      <div className="flex flex-col gap-4">
+        <p className="text-ui text-muted">
+          Copy this key now. It is shown once and cannot be retrieved again.
         </p>
-        <div className="relative flex items-start gap-2 p-md bg-slate-800 rounded">
-          <code className="flex-1 text-emerald-400 font-mono text-code break-all">
+        <div
+          className="code-panel flex items-start gap-3 p-3.5"
+          aria-live="polite"
+        >
+          <code className="flex-1 break-all font-mono text-[0.8125rem] text-ink">
             {generatedKey}
           </code>
-          <CopyButton value={generatedKey} label="Copy API key to clipboard" />
+          <CopyButton value={generatedKey} label="Copy" />
         </div>
-        <div className="flex gap-md justify-end">
-          <Button variant="secondary" onClick={() => router.push("/api-keys")}>
-            Done
-          </Button>
+        <div className="flex justify-end">
+          <Button onClick={() => router.push("/api-keys")}>Done</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-xl" noValidate>
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5" noValidate>
       <Input
-        label="Key Name"
-        placeholder="e.g. Production Billing Service"
-        hint="A descriptive name to identify this key later."
+        label="Key name"
+        placeholder="Production billing service"
+        hint="A name that tells you later which application this key belongs to."
         error={errors.name?.message}
         {...register("name")}
       />
       <Input
-        label="Expiration Date (Optional)"
+        label="Expiry date"
         type="date"
-        hint="If left blank, the key will never expire."
+        hint="Leave it empty and the key never expires."
         error={errors.expires_at?.message}
         {...register("expires_at")}
       />
-      <div className="flex flex-col sm:flex-row justify-end gap-md pt-lg border-t border-outline-variant">
+      <div className="flex flex-col gap-2 border-t border-ink/12 pt-5 sm:flex-row sm:justify-end">
         <Button type="button" variant="secondary" onClick={() => router.back()}>
           Cancel
         </Button>
         <Button type="submit" loading={loading}>
-          <Key className="h-4 w-4" />
-          Generate Key
+          <Key className="h-4 w-4" aria-hidden />
+          Generate key
         </Button>
       </div>
     </form>

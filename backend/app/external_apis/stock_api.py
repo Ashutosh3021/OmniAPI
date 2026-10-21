@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import httpx
 
 from app.external_apis.base import BaseAPIClient
+from app.external_apis.client_pool import get_client
+from app.schemas.service_params import StockParams
 from app.utils.exceptions import ExternalAPIError
 
 STOCK_URL = "https://www.alphavantage.co/query"
@@ -14,6 +16,7 @@ class StockAPIClient(BaseAPIClient):
     """Client for Alpha Vantage GLOBAL_QUOTE endpoint."""
 
     service_name = "stock"
+    params_model = StockParams
 
     def __init__(self, encrypted_api_key: str) -> None:
         from app.utils.encryption import decrypt
@@ -35,12 +38,18 @@ class StockAPIClient(BaseAPIClient):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(STOCK_URL, params=query_params)
-                response.raise_for_status()
-                payload = response.json()
+            client = get_client()
+            response = await client.get(STOCK_URL, params=query_params)
+            response.raise_for_status()
+            payload = response.json()
         except httpx.HTTPStatusError as exc:
-            raise ExternalAPIError(f"Stock API returned {exc.response.status_code}") from exc
+            status_code = exc.response.status_code
+            # 4xx (other than 408/429) means the request itself is wrong;
+            # retrying it will not help.
+            retryable = status_code >= 500 or status_code in (408, 429)
+            raise ExternalAPIError(
+                f"Stock API returned {status_code}", retryable=retryable
+            ) from exc
         except httpx.HTTPError as exc:
             raise ExternalAPIError("Stock API request failed") from exc
 

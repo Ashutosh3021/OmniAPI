@@ -1,17 +1,24 @@
+import type { Metadata } from "next";
 import { CreateWebhookForm } from "@/components/forms/CreateWebhookForm";
 import { PageHeader } from "@/components/shared/PageHeader";
-import { Card } from "@/components/shared/Card";
+
+export const metadata: Metadata = {
+  title: "Add a webhook",
+  description:
+    "Subscribe an HTTPS endpoint to an OmniAPI event. Every delivery is signed and retried on failure.",
+};
 
 export default function CreateWebhookPage() {
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-xl">
       <PageHeader
-        title="Create Webhook"
-        description="Configure an endpoint to receive event notifications."
+        meta="signed deliveries"
+        title="Add a webhook"
+        description="OmniAPI pushes the event to your endpoint as soon as it happens, and retries a failed delivery with exponential backoff."
       />
-      <Card>
+      <div className="panel p-5 md:p-7">
         <CreateWebhookForm />
-      </Card>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import httpx
 
 from app.external_apis.base import BaseAPIClient
+from app.external_apis.client_pool import get_client
+from app.schemas.service_params import NewsParams
 from app.utils.exceptions import ExternalAPIError
 
 NEWS_URL = "https://newsapi.org/v2/everything"
@@ -14,6 +16,7 @@ class NewsAPIClient(BaseAPIClient):
     """Client for NewsAPI everything endpoint."""
 
     service_name = "news"
+    params_model = NewsParams
 
     def __init__(self, encrypted_api_key: str) -> None:
         from app.utils.encryption import decrypt
@@ -35,12 +38,18 @@ class NewsAPIClient(BaseAPIClient):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(NEWS_URL, params=query_params)
-                response.raise_for_status()
-                payload = response.json()
+            client = get_client()
+            response = await client.get(NEWS_URL, params=query_params)
+            response.raise_for_status()
+            payload = response.json()
         except httpx.HTTPStatusError as exc:
-            raise ExternalAPIError(f"News API returned {exc.response.status_code}") from exc
+            status_code = exc.response.status_code
+            # 4xx (other than 408/429) means the request itself is wrong;
+            # retrying it will not help.
+            retryable = status_code >= 500 or status_code in (408, 429)
+            raise ExternalAPIError(
+                f"News API returned {status_code}", retryable=retryable
+            ) from exc
         except httpx.HTTPError as exc:
             raise ExternalAPIError("News API request failed") from exc
 

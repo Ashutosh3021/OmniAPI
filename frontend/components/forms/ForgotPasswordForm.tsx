@@ -4,16 +4,12 @@ import Link from "next/link";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Mail } from "lucide-react";
 import { Button } from "@/components/shared/Button";
 import { Input } from "@/components/shared/Input";
-import { useNotification } from "@/context/NotificationContext";
 import { forgotPasswordSchema, type ForgotPasswordInput } from "@/lib/validators";
 
 export function ForgotPasswordForm() {
-  const { notify } = useNotification();
-  const [loading, setLoading] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const {
     register,
@@ -23,42 +19,50 @@ export function ForgotPasswordForm() {
     resolver: zodResolver(forgotPasswordSchema),
   });
 
-  const onSubmit = async () => {
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setLoading(false);
-    setSent(true);
-    notify("Password reset link sent to your email", "success");
+  const onSubmit = () => {
+    setSubmitted(true);
   };
 
-  if (sent) {
+  if (submitted) {
     return (
-      <div className="text-center space-y-md">
-        <p className="text-body-md text-on-surface-variant">
-          Check your inbox for a password reset link.
+      <div className="flex flex-col gap-4">
+        <div className="rounded border border-warn/40 bg-warn/10 p-4">
+          <p className="label-wire mb-1.5 text-warn">not available</p>
+          <p className="text-ui text-ink">
+            This deployment does not expose a password reset endpoint, so no
+            email was sent. Ask the account owner to reset it, or create a new
+            API key from the dashboard.
+          </p>
+        </div>
+        <Button variant="secondary" fullWidth onClick={() => setSubmitted(false)}>
+          Back
+        </Button>
+        <p className="text-center text-meta text-muted">
+          <Link href="/login" className="link font-medium text-accent">
+            Back to sign in
+          </Link>
         </p>
-        <Link href="/login" className="text-secondary-fixed font-medium hover:underline">
-          Back to sign in
-        </Link>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-lg" noValidate>
+    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
       <Input
-        label="Email Address"
+        label="Email"
         type="email"
-        leftIcon={<Mail className="h-5 w-5" />}
+        autoComplete="email"
+        placeholder="you@company.com"
         error={errors.email?.message}
-        hint="We'll send you a link to reset your password."
         {...register("email")}
       />
-      <Button type="submit" fullWidth loading={loading}>
-        Send Reset Link
+
+      <Button type="submit" fullWidth>
+        Send reset link
       </Button>
-      <p className="text-center text-body-sm">
-        <Link href="/login" className="text-secondary-fixed hover:underline">
+
+      <p className="text-center text-meta text-muted">
+        <Link href="/login" className="link font-medium text-accent">
           Back to sign in
         </Link>
       </p>
