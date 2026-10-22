@@ -35,7 +35,7 @@ class WebhookEvent(Base):
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[WebhookEventStatus] = mapped_column(
         Enum(
             WebhookEventStatus,

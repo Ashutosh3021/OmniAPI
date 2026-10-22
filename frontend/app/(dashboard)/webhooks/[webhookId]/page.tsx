@@ -70,7 +70,7 @@ export default function WebhookDetailPage() {
   if (notFound || !webhook) {
     return (
       <>
-        <PageHeader section="events" title="Webhook not found" />
+        <PageHeader title="Webhook not found" />
         <EmptyState
           title="This webhook does not exist."
           description="It may have been deleted, or the link may be wrong."
@@ -84,7 +84,7 @@ export default function WebhookDetailPage() {
   return (
     <div className="max-w-2xl">
       <PageHeader
-        section="events"
+        meta={webhook.event_type}
         title="Webhook"
         description={webhook.url}
         action={

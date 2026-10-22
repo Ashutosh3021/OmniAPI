@@ -75,7 +75,7 @@ export default function ExternalServiceDetailPage() {
   if (notFound || !service) {
     return (
       <>
-        <PageHeader section="providers" title="Service not found" />
+        <PageHeader title="Service not found" />
         <EmptyState
           title="This service does not exist."
           description="It may have been removed, or the link may be wrong."
@@ -92,7 +92,7 @@ export default function ExternalServiceDetailPage() {
   return (
     <div className="max-w-2xl">
       <PageHeader
-        section="providers"
+        meta={`service ${service.service_id}`}
         title={service.service_name}
         description={provider}
         action={

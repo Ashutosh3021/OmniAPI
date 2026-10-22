@@ -45,8 +45,23 @@ class Settings(BaseSettings):
     rate_limit_pro: int = 1000
     rate_limit_enterprise: int = 10000
 
+    # Authentication throttling. Login and registration are the only
+    # unauthenticated write endpoints, so they carry their own limits.
+    rate_limit_login_per_ip: int = 20
+    rate_limit_login_per_account: int = 5
+    rate_limit_register_per_ip: int = 5
+    rate_limit_auth_window_seconds: int = 900
+
+    # Honour X-Forwarded-For only when a trusted proxy sits in front of the
+    # app. Leave off when the app is directly exposed.
+    trust_proxy_header: bool = False
+
     # Celery
     celery_task_timeout: int = 10
+
+    # Data retention
+    usage_log_retention_days: int = 90
+    webhook_event_retention_days: int = 30
 
     # Security
     secret_key: str = Field(..., min_length=16)

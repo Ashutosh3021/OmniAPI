@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.external_service import ExternalService, ExternalServiceStatus
 from app.models.usage_log import UsageLog
 from app.models.user import User
 from app.utils import encryption
-from app.tasks.analytics_tasks import compute_hourly_stats
 
 
 @pytest.fixture
@@ -125,14 +125,45 @@ def test_analytics_csv_report(client, auth_headers, seeded_usage) -> None:
     assert "weather" in body
 
 
-def test_compute_hourly_stats_noop_on_empty(db_engine) -> None:
-    with patch("app.tasks.analytics_tasks.SessionLocal") as mock_session:
+def test_purge_old_usage_logs_removes_expired_rows(db_engine) -> None:
+    """The retention job must delete history past the configured window."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.models.usage_log import UsageLog
+    from app.tasks.maintenance_tasks import purge_old_usage_logs
+
+    with patch("app.tasks.maintenance_tasks.SessionLocal") as mock_session:
         from sqlalchemy.orm import sessionmaker
 
         session = sessionmaker(bind=db_engine)()
         mock_session.return_value = session
-        result = compute_hourly_stats()
-    assert result["tenants_processed"] == 0
+
+        now = datetime.now(timezone.utc)
+        session.add(
+            UsageLog(
+                user_id=1,
+                endpoint="/orchestrate/weather",
+                response_time_ms=10,
+                status_code=200,
+                created_at=now - timedelta(days=200),
+            )
+        )
+        session.add(
+            UsageLog(
+                user_id=1,
+                endpoint="/orchestrate/weather",
+                response_time_ms=10,
+                status_code=200,
+                created_at=now - timedelta(days=1),
+            )
+        )
+        session.commit()
+
+        result = purge_old_usage_logs()
+
+    assert result["deleted_usage_logs"] == 1
+    remaining = session.scalars(select(UsageLog)).all()
+    assert len(remaining) == 1
 
 
 def test_analytics_tenant_isolation(client, auth_headers, seeded_usage) -> None:

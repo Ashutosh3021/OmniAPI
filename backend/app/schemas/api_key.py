@@ -14,10 +14,15 @@ class APIKeyCreate(BaseModel):
 
 
 class APIKeyUpdate(BaseModel):
-    """Update an existing OmniAPI key."""
+    """Update an existing API key.
+
+    ``is_active`` revokes the key without deleting it: the row survives so
+    the traffic it generated stays attributable in ``usage_logs.api_key_id``.
+    """
 
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     expires_at: Optional[datetime] = None
+    is_active: Optional[bool] = None
 
 
 class APIKeyResponse(BaseModel):

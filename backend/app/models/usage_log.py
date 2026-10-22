@@ -29,6 +29,12 @@ class UsageLog(Base):
         nullable=True,
         index=True,
     )
+    api_key_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("api_keys.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
     response_time_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     status_code: Mapped[int] = mapped_column(Integer, nullable=False, server_default="200")

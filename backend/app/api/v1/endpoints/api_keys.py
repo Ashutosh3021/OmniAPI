@@ -102,7 +102,11 @@ def update_api_key(
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> APIKeyResponse:
-    """Update name and/or expiry of an existing API key."""
+    """Update the name, expiry or active state of an existing API key.
+
+    Revoking (``is_active: false``) keeps the record so the traffic the key
+    produced remains attributable; deleting removes it entirely.
+    """
     _ = tenant_id
     api_key = db.scalar(
         select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
@@ -114,6 +118,8 @@ def update_api_key(
         api_key.name = body.name
     if body.expires_at is not None:
         api_key.expires_at = body.expires_at
+    if body.is_active is not None:
+        api_key.is_active = body.is_active
 
     db.commit()
     db.refresh(api_key)

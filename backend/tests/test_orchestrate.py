@@ -1,5 +1,6 @@
 """Orchestration endpoint tests (Phase 3 + Phase 4)."""
 
+import inspect
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
@@ -60,7 +61,10 @@ def _orchestrate_mocks(fetch_map=None, fetch_side_effect=None, cache_get_side_ef
 
     async def _fake_fetch(self, params):
         if fetch_side_effect is not None:
-            return fetch_side_effect(self, params)
+            outcome = fetch_side_effect(self, params)
+            if inspect.isawaitable(outcome):
+                outcome = await outcome
+            return outcome
         if fetch_map is not None:
             return fetch_map[self.service_name]
         raise AssertionError(f"unexpected provider call to {self.service_name}")

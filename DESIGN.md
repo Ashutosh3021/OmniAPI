@@ -126,14 +126,14 @@ gradient, any eyebrow label above every heading.
 ### Fluid scale
 
 ```
---t-display: clamp(2.75rem, 1.35rem + 6.2vw, 6.5rem)
---t-h1:      clamp(2rem, 1.35rem + 2.9vw, 3.5rem)
---t-h2:      clamp(1.375rem, 1.12rem + 1.1vw, 1.875rem)
---t-h3:      clamp(1.0625rem, 0.99rem + 0.35vw, 1.25rem)
+--t-display: clamp(2.75rem, 1.05rem + 5.6vw, 6rem)
+--t-title:   clamp(1.875rem, 1.32rem + 2.6vw, 3.25rem)
+--t-heading: clamp(1.3125rem, 1.09rem + 1.05vw, 1.875rem)
+--t-subhead: clamp(1.0625rem, 0.99rem + 0.35vw, 1.25rem)
 --t-body:    clamp(1rem, 0.965rem + 0.17vw, 1.0625rem)
 --t-ui:      0.9375rem   (15px, dense UI)
---t-meta:    0.8125rem   (13px, panel labels)
---t-micro:   0.6875rem   (11px, mono stamps)
+--t-meta:    0.8125rem   (13px, secondary)
+--t-micro:   0.75rem     (12px, mono stamps)
 ```
 
 ### Grid and rhythm
@@ -265,6 +265,71 @@ Three placements:
 - Billing figures on `/settings` are the pre-existing placeholders and stay flagged.
 - Every screenshot-worthy number on the dashboard comes from the API; when the API is
   unavailable the page shows an empty state, never a fake number.
+
+---
+
+## Changes made during the build
+
+These decisions were taken while writing the code. They are recorded here so the next pass
+does not undo them by accident.
+
+### Structure
+
+1. **`/docs` moved out of the protected group** to `app/docs/` and is now a public route
+   with the site header. The landing page's "Read the docs" call to action points at it, and
+   a visitor who is not signed in can actually read it. The dashboard rail still links to it.
+2. **`/` became a public landing page** instead of a redirect to `/login`. The dashboard group
+   is still behind `ProtectedRoute`.
+3. **One navigation system on phones**: a top bar plus a full drawer. The old bottom bar was
+   removed, because two navigation systems on a 390 px screen is clutter and the drawer
+   carries the spine treatment.
+4. **Dead code removed**: `Card`, `Checkbox`, `useApi`, `useFetch`, `useDebounce`,
+   `useLocalStorage`, `Sidebar`, `Navbar`, `MobileBottomNav`, `ActivityTable`,
+   `RecentActivity`, `StatsCard`, `UsageChart`, `ProfileForm`, `SecuritySettings`,
+   `BillingInfo`.
+
+### Contract and honesty fixes (frontend only, no backend change)
+
+1. **External services did not match the API.** The frontend sent `{name, serviceType,
+   apiKey, rateLimit}` and read `{id, name, serviceType, rateLimit, lastSync}`. The gateway
+   expects `{service_name, api_key, max_calls_per_hour}` and returns `{service_id,
+   service_name, max_calls_per_hour, status, created_at}`. The provider list was also wrong:
+   the gateway supports `weather`, `news` and `stock`, not Stripe or Twilio. The frontend is
+   now on the real contract, so the feature works.
+2. **The token refresh flow was broken.** `POST /auth/refresh` was called with an empty body
+   although the endpoint requires `refresh_token`, and a rotated refresh token was thrown
+   away. Both are fixed.
+3. **`isTokenExpired` could not read a JWT.** Base64url segments (`-`, `_`) were passed to
+   `atob` untranslated, and a read failure was treated as "not expired". It is now
+   base64url-safe and fails closed.
+4. **A fabricated latency chart was removed.** The analytics page derived p50 and p95 by
+   multiplying the average response time by 0.85 and 1.4, and labelled a per-service bar
+   chart "API Usage (Requests/sec)". The gateway exposes no percentiles, so the numbers
+   were invented. The page now shows only what the usage log actually contains.
+5. **Forms that could not succeed were removed.** The profile, security and billing panels
+   mocked their own success with a timer. The settings page now shows the real account
+   fields, a working theme switch, and says plainly that the gateway exposes no password
+   reset or profile update endpoint. The forgot-password page says the same instead of
+   pretending an email was sent.
+6. **The CSV export now comes from the real endpoint** (`GET /analytics/reports`) rather
+   than from a hand-built CSV in the browser that broke on commas and quotes.
+
+### Design decisions taken later
+
+1. **The section label above every heading was removed.** It was the eyebrow pattern the
+   brief warns about. `PageHeader` now takes a `meta` stamp that carries real information
+   (counts, an id, a period), rendered in the header's right column, not above the title.
+2. **Display type was reduced** from a 6.75 rem ceiling to 6 rem, so "Many answers gather
+   back." holds one line at desktop widths instead of wrapping.
+3. **The fan's viewBox was narrowed** from 760 to 640 units so the diagram renders close to
+   1:1 and its labels stay legible at panel width instead of shrinking to 9 px.
+4. **The primary button's label colour follows the theme.** The dark accent is a light blue,
+   so the label is dark on it, which keeps AA contrast in both themes.
+5. **Charts load on demand.** The charting library is code-heavy and is not needed until
+   there is data, so it is imported dynamically. First load JS dropped from 267 kB to a
+   maximum of 171 kB.
+6. **No cursor follower.** The native cursor stays. A follower on a dense tool interface
+   competes with the pointer and adds risk for no gain.
 
 ### QA (Phase 4) — not started
 

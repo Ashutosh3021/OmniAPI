@@ -4,6 +4,7 @@ from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.db.session import get_db
 from app.middleware.rate_limit import apply_rate_limit
@@ -14,6 +15,11 @@ from app.utils.exceptions import AuthenticationError, AuthorizationError
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
+def _load_user(db: Session, user_pk: int) -> User | None:
+    """Blocking user lookup. Runs in a worker thread."""
+    return db.scalar(select(User).where(User.id == user_pk))
+
+
 async def get_current_user(
     request: Request,
     token: str = Depends(oauth2_scheme),
@@ -21,6 +27,10 @@ async def get_current_user(
 ) -> User:
     """
     Decode JWT, load user from database, enforce active status and rate limits.
+
+    The database lookup is dispatched to a worker thread: it is blocking I/O,
+    and running it on the event loop would stall every concurrent request
+    for the duration of the query.
 
     Raises 401 for invalid tokens or missing users; 403 for inactive users.
     """
@@ -38,7 +48,7 @@ async def get_current_user(
     except (TypeError, ValueError) as exc:
         raise AuthenticationError() from exc
 
-    user = db.scalar(select(User).where(User.id == user_pk))
+    user = await run_in_threadpool(_load_user, db, user_pk)
     if user is None:
         raise AuthenticationError("User not found")
 

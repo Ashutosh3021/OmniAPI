@@ -67,7 +67,10 @@ export default function DashboardPage() {
   if (failed) {
     return (
       <>
-        <PageHeader section="overview" title="Overview" />
+        <PageHeader
+          title="Overview"
+          description="The gateway did not answer. Reload to try again."
+        />
         <EmptyState
           title="The analytics API did not answer."
           description="The gateway may be waking up, or the request timed out. Reload to try again."
@@ -84,9 +87,9 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        section="overview"
         title="Overview"
         description="Where your calls went in the last 24 hours, and what came back."
+        meta={`${rows.length} ${rows.length === 1 ? "service" : "services"} · ${totalCalls.toLocaleString()} calls`}
         action={
           <Link
             href="/analytics"

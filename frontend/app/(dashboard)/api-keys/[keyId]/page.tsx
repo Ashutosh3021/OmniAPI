@@ -90,7 +90,7 @@ export default function ApiKeyDetailPage() {
   if (notFound || !key) {
     return (
       <>
-        <PageHeader section="credentials" title="Key not found" />
+        <PageHeader title="Key not found" />
         <EmptyState
           title="This key does not exist."
           description="It may have been deleted, or the link may be wrong."
@@ -102,7 +102,7 @@ export default function ApiKeyDetailPage() {
   return (
     <div className="max-w-2xl">
       <PageHeader
-        section="credentials"
+        meta={`key ${key.key_id}`}
         title={key.name}
         description={`Key ${key.key_id} · created ${formatDate(key.created_at)}`}
         action={

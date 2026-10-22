@@ -13,7 +13,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 settings = get_settings()
 
 TOKEN_TYPE_ACCESS = "access"
-TOKEN_TYPE_REFRESH = "refresh"
 
 
 def hash_password(plain: str) -> str:
@@ -37,13 +36,6 @@ def create_access_token(data: dict[str, Any]) -> str:
     """Create a short-lived JWT access token."""
     expires = timedelta(minutes=settings.access_token_expire_minutes)
     token_data = {**data, "type": TOKEN_TYPE_ACCESS}
-    return _create_token(token_data, expires)
-
-
-def create_refresh_token(data: dict[str, Any]) -> str:
-    """Create a longer-lived JWT refresh token."""
-    expires = timedelta(days=settings.refresh_token_expire_days)
-    token_data = {**data, "type": TOKEN_TYPE_REFRESH}
     return _create_token(token_data, expires)
 
 
