@@ -28,6 +28,7 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:gap-gutter">
         <aside className="lg:col-span-3">
           <div className="relative">
+            <span data-pulse-rail className="rail-glow" aria-hidden />
             <svg
               className="pointer-events-none absolute left-0 top-0 hidden h-full w-px lg:block"
               preserveAspectRatio="none"

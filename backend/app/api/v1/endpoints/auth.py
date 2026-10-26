@@ -1,46 +1,48 @@
-"""Authentication endpoints: register, login, refresh, logout, profile, password."""
+"""Authentication endpoints: OAuth sign-in, refresh, logout, profile.
+
+There is no password sign-in. An account is created the first time somebody
+signs in with Google or GitHub, and the account is identified by the provider
+account that was used.
+"""
 
 import logging
-import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi.responses import RedirectResponse
+from starlette.concurrency import run_in_threadpool
 
-from app.db.session import get_db
-from app.middleware.rate_limit import (
-    enforce_login_rate_limit,
-    enforce_register_rate_limit,
-)
-from app.models.password_reset_token import PasswordResetToken
-from app.models.user import User, UserTier
+from app.config import get_settings
+from app.db.database import Database, get_db
+from app.middleware.auth_throttle import enforce_oauth_rate_limit
+from app.models.user import User
 from app.schemas.auth import (
-    ChangePasswordRequest,
-    ForgotPasswordRequest,
-    ForgotPasswordResponse,
-    ResetPasswordRequest,
+    OAuthExchangeRequest,
+    OAuthProviderInfo,
+    OAuthProvidersResponse,
     Token,
     TokenRefresh,
-    UserLogin,
     UserProfileUpdate,
-    UserRegister,
     UserResponse,
 )
-from app.services import auth_service, session_service
+from app.services import auth_service, oauth_service, session_service, user_cache
+from app.services.oauth_service import PROVIDER_NAMES
+from app.services.redis_client import get_redis
 from app.utils.decorators import require_auth
-from app.utils.exceptions import AuthenticationError, DuplicateResourceError
+from app.utils.exceptions import AuthenticationError
 from app.utils.user_helpers import split_full_name, user_to_response
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-PASSWORD_RESET_TTL_MINUTES = 60
+STATE_KEY_PREFIX = "omniapi:oauth:state:"
+CODE_KEY_PREFIX = "omniapi:oauth:code:"
 
 
-def _issue_tokens(user: User, db: Session) -> Token:
+def _issue_tokens(user: User, db: Database) -> Token:
+    """Issue an access/refresh token pair for a user."""
     tier = user.tier.value if hasattr(user.tier, "value") else str(user.tier)
     claims = auth_service.build_token_claims(user.id, user.email, tier)
     refresh_token = session_service.issue_refresh_token(db, user)
@@ -50,54 +52,154 @@ def _issue_tokens(user: User, db: Session) -> Token:
     )
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(
-    body: UserRegister,
-    db: Session = Depends(get_db),
-    _throttle: None = Depends(enforce_register_rate_limit),
-) -> UserResponse:
-    """Register a new user with free tier by default."""
-    existing = db.scalar(select(User).where(User.email == body.email))
-    if existing is not None:
-        raise DuplicateResourceError("Email already registered")
+def _failure_redirect(error: str) -> RedirectResponse:
+    """Send the browser back to the sign-in page with the reason."""
+    settings = get_settings()
+    base = settings.oauth_failure_redirect_url
+    separator = "&" if "?" in base else "?"
+    return RedirectResponse(f"{base}{separator}error={error}", status_code=status.HTTP_302_FOUND)
 
-    first_name, last_name = split_full_name(body.full_name)
-    user = User(
-        email=body.email,
-        password_hash=auth_service.hash_password(body.password),
-        first_name=first_name,
-        last_name=last_name,
-        tier=UserTier.FREE,
-        is_active=True,
+
+@router.get("/oauth/providers", response_model=OAuthProvidersResponse)
+def list_oauth_providers() -> OAuthProvidersResponse:
+    """Return the sign-in providers the client may offer."""
+    settings = get_settings()
+    providers = []
+    for provider_id, name in PROVIDER_NAMES.items():
+        providers.append(
+            OAuthProviderInfo(
+                id=provider_id,
+                name=name,
+                configured=provider_id in settings.oauth_providers,
+            )
+        )
+    return OAuthProvidersResponse(providers=providers)
+
+
+@router.get("/oauth/{provider}", dependencies=[Depends(enforce_oauth_rate_limit)])
+async def start_oauth(provider: str, request: Request) -> RedirectResponse:
+    """Redirect the browser to a provider to begin signing in.
+
+    A single-use ``state`` value is stored against the session, so the
+    provider's callback can be matched to this attempt and cannot be forged.
+    """
+    settings = get_settings()
+    config = oauth_service.provider_config(provider, settings)
+
+    state = oauth_service.new_state()
+    redis = get_redis()
+    await redis.set(
+        f"{STATE_KEY_PREFIX}{state}",
+        provider,
+        ex=settings.oauth_state_ttl_seconds,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user_to_response(user)
+
+    logger.info("Starting %s sign-in", provider)
+    return RedirectResponse(
+        oauth_service.authorization_url(config, state),
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
-@router.post("/login", response_model=Token)
-def login(
-    body: UserLogin,
-    db: Session = Depends(get_db),
-    _throttle: None = Depends(enforce_login_rate_limit),
+@router.get(
+    "/oauth/{provider}/callback",
+    dependencies=[Depends(enforce_oauth_rate_limit)],
+)
+async def oauth_callback(
+    provider: str,
+    request: Request,
+    db: Database = Depends(get_db),
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Complete a provider sign-in and hand a one-time code to the browser."""
+    settings = get_settings()
+
+    if error:
+        logger.info("Provider reported an error during %s sign-in: %s", provider, error)
+        return _failure_redirect(error)
+
+    if not code or not state:
+        return _failure_redirect("missing_code")
+
+    redis = get_redis()
+    state_key = f"{STATE_KEY_PREFIX}{state}"
+    expected_provider = await redis.get(state_key)
+    # The state value is single use: it is removed whether or not it matched.
+    await redis.delete(state_key)
+
+    if not expected_provider:
+        logger.warning("OAuth callback arrived with an unknown or expired state")
+        return _failure_redirect("invalid_state")
+    if expected_provider != provider:
+        logger.warning("OAuth callback provider mismatch")
+        return _failure_redirect("invalid_state")
+
+    config = oauth_service.provider_config(provider, settings)
+    try:
+        profile = await oauth_service.exchange_code_for_profile(config, code)
+    except AuthenticationError:
+        return _failure_redirect("invalid_code")
+    except httpx.HTTPError:
+        logger.warning("Provider call failed during %s sign-in", provider, exc_info=True)
+        return _failure_redirect("provider_unavailable")
+
+    try:
+        user = await run_in_threadpool(oauth_service.link_or_create_user, db, profile)
+    except AuthenticationError as exc:
+        logger.info("Rejected %s sign-in: %s", provider, exc.detail)
+        return _failure_redirect("unverified_email")
+
+    exchange_code = oauth_service.new_exchange_code()
+    await redis.set(
+        f"{CODE_KEY_PREFIX}{exchange_code}",
+        str(user.id),
+        ex=settings.oauth_code_ttl_seconds,
+    )
+
+    logger.info("Completed %s sign-in for user %s", provider, user.id)
+    separator = "&" if "?" in settings.oauth_success_redirect_url else "?"
+    return RedirectResponse(
+        f"{settings.oauth_success_redirect_url}{separator}code={exchange_code}",
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+@router.post("/oauth/exchange", response_model=Token)
+async def exchange_oauth_code(
+    body: OAuthExchangeRequest,
+    db: Database = Depends(get_db),
 ) -> Token:
-    """Validate credentials and return a token pair."""
-    user = db.scalar(select(User).where(User.email == body.email))
-    if user is None or not auth_service.verify_password(body.password, user.password_hash):
-        raise AuthenticationError("Incorrect email or password")
+    """Exchange a one-time sign-in code for a token pair.
 
-    if not user.is_active:
-        raise AuthenticationError("User account is inactive")
+    The code can be redeemed exactly once, and only within a few minutes of
+    being issued.
+    """
+    redis = get_redis()
+    code_key = f"{CODE_KEY_PREFIX}{body.code}"
+    raw_user_id = await redis.get(code_key)
+    await redis.delete(code_key)
 
-    user.last_login = datetime.now(timezone.utc)
-    db.commit()
+    if not raw_user_id:
+        raise AuthenticationError("This sign-in link has expired. Please try again.")
 
-    return _issue_tokens(user, db)
+    try:
+        user_id = int(raw_user_id)
+    except (TypeError, ValueError) as exc:
+        raise AuthenticationError("This sign-in link has expired. Please try again.") from exc
+
+    user = await run_in_threadpool(db.users.get_by_id, user_id)
+    if user is None or not user.is_active:
+        raise AuthenticationError("Account is not active.")
+
+    tokens = await run_in_threadpool(_issue_tokens, user, db)
+    await user_cache.touch_last_login(db, user)
+    return tokens
 
 
 @router.post("/refresh", response_model=Token)
-def refresh(body: TokenRefresh, db: Session = Depends(get_db)) -> Token:
+def refresh(body: TokenRefresh, db: Database = Depends(get_db)) -> Token:
     """Exchange a refresh token for a new token pair.
 
     The presented token is revoked and replaced. Presenting a token that was
@@ -113,7 +215,7 @@ def refresh(body: TokenRefresh, db: Session = Depends(get_db)) -> Token:
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(body: TokenRefresh, db: Session = Depends(get_db)) -> None:
+def logout(body: TokenRefresh, db: Database = Depends(get_db)) -> None:
     """Revoke a refresh token. Signing out on the client is not enough."""
     session_service.revoke_refresh_token(db, body.refresh_token)
 
@@ -125,99 +227,22 @@ def me(current_user: User = Depends(require_auth)) -> UserResponse:
 
 
 @router.patch("/me", response_model=UserResponse)
-def update_me(
+async def update_me(
     body: UserProfileUpdate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
 ) -> UserResponse:
     """Update the authenticated user's profile."""
     first_name, last_name = split_full_name(body.full_name)
-    current_user.first_name = first_name
-    current_user.last_name = last_name
-    db.commit()
-    db.refresh(current_user)
-    return user_to_response(current_user)
-
-
-@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(
-    body: ChangePasswordRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
-) -> None:
-    """Change the authenticated user's password.
-
-    Every existing session is revoked — a password change is how a user
-    responds to a suspected compromise.
-    """
-    if not auth_service.verify_password(body.current_password, current_user.password_hash):
-        raise AuthenticationError("Current password is incorrect")
-
-    if body.current_password == body.new_password:
-        raise AuthenticationError("New password must be different from the current one")
-
-    current_user.password_hash = auth_service.hash_password(body.new_password)
-    db.commit()
-
-    session_service.revoke_all_for_user(db, current_user.id)
-
-
-@router.post("/forgot-password", response_model=ForgotPasswordResponse, status_code=status.HTTP_202_ACCEPTED)
-def forgot_password(
-    body: ForgotPasswordRequest,
-    db: Session = Depends(get_db),
-) -> ForgotPasswordResponse:
-    """Start a password reset.
-
-    The response is identical whether or not the address has an account, so
-    the endpoint cannot be used to enumerate users.
-    """
-    from app.config import get_settings
-
-    settings = get_settings()
-    user = db.scalar(select(User).where(User.email == body.email))
-
-    reset_token: Optional[str] = None
-    if user is not None and user.is_active:
-        raw = secrets.token_urlsafe(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(
-            minutes=PASSWORD_RESET_TTL_MINUTES
-        )
-        db.add(
-            PasswordResetToken(
-                user_id=user.id,
-                token_hash=session_service.hash_token(raw),
-                expires_at=expires_at,
-            )
-        )
-        db.commit()
-        logger.info("Password reset requested for user %s", user.id)
-        if not settings.is_production:
-            # No email provider is wired up yet. Outside production the token
-            # is returned so the flow can be exercised end to end.
-            reset_token = raw
-
-    return ForgotPasswordResponse(status="accepted", reset_token=reset_token)
-
-
-@router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
-def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)) -> None:
-    """Complete a password reset using a single-use token."""
-    record = db.scalar(
-        select(PasswordResetToken).where(
-            PasswordResetToken.token_hash == session_service.hash_token(body.token)
-        )
+    updated_at = datetime.now(timezone.utc)
+    user = await run_in_threadpool(
+        db.users.update_profile,
+        current_user.id,
+        first_name=first_name,
+        last_name=last_name,
+        updated_at=updated_at,
     )
-    if record is None or not record.is_usable:
-        raise AuthenticationError("This reset link is invalid or has expired")
-
-    user = db.get(User, record.user_id)
-    if user is None or not user.is_active:
-        raise AuthenticationError("This reset link is invalid or has expired")
-
-    user.password_hash = auth_service.hash_password(body.new_password)
-    record.used_at = datetime.now(timezone.utc)
-    db.commit()
-
-    # A reset is a compromise response: kill every existing session.
-    session_service.revoke_all_for_user(db, user.id)
+    if user is None:
+        raise AuthenticationError("User not found")
+    await user_cache.invalidate_user(user.id)
+    return user_to_response(user)

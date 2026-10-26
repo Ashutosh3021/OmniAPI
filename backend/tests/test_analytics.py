@@ -1,74 +1,68 @@
 """Analytics endpoint tests."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from app.models.external_service import ExternalService, ExternalServiceStatus
-from app.models.usage_log import UsageLog
-from app.models.user import User
 from app.utils import encryption
 
 
 @pytest.fixture
-def auth_headers(client):
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "analytics@example.com",
-            "password": "securepass123",
-            "full_name": "Analytics User",
-        },
+def analytics_user(db):
+    """The account the analytics tests read from."""
+    return db.users.create(
+        email="analytics@example.com",
+        first_name="Analytics",
+        last_name="User",
+        created_at=datetime.now(timezone.utc),
     )
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "analytics@example.com", "password": "securepass123"},
-    )
-    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 @pytest.fixture
-def seeded_usage(db_session: Session, auth_headers, client) -> None:
-    from sqlalchemy import select
+def auth_headers(analytics_user):
+    """Authorization headers for the analytics account."""
+    from app.services import auth_service
 
-    user = db_session.scalar(select(User).where(User.email == "analytics@example.com"))
-    service = ExternalService(
-        user_id=user.id,
+    claims = auth_service.build_token_claims(
+        analytics_user.id, analytics_user.email, analytics_user.tier
+    )
+    return {"Authorization": f"Bearer {auth_service.create_access_token(claims)}"}
+
+
+@pytest.fixture
+def seeded_usage(db, analytics_user) -> None:
+    """Two usage rows for the analytics account."""
+    service = db.external_services.create(
+        user_id=analytics_user.id,
         service_name="weather",
         api_key_encrypted=encryption.encrypt("test-key"),
-        status=ExternalServiceStatus.ACTIVE,
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(service)
-    db_session.commit()
-    db_session.refresh(service)
 
     now = datetime.now(timezone.utc)
-    db_session.add_all(
+    db.usage_logs.insert_many(
         [
-            UsageLog(
-                user_id=user.id,
-                service_id=service.id,
-                endpoint="/orchestrate/weather",
-                response_time_ms=100,
-                status_code=200,
-                cache_hit=True,
-                created_at=now,
-            ),
-            UsageLog(
-                user_id=user.id,
-                service_id=service.id,
-                endpoint="/orchestrate/weather",
-                response_time_ms=200,
-                status_code=500,
-                cache_hit=False,
-                created_at=now,
-            ),
+            {
+                "user_id": analytics_user.id,
+                "service_id": service.id,
+                "endpoint": "/orchestrate/weather",
+                "response_time_ms": 100,
+                "status_code": 200,
+                "cache_hit": True,
+                "created_at": now,
+            },
+            {
+                "user_id": analytics_user.id,
+                "service_id": service.id,
+                "endpoint": "/orchestrate/weather",
+                "response_time_ms": 200,
+                "status_code": 500,
+                "cache_hit": False,
+                "created_at": now,
+            },
         ]
     )
-    db_session.commit()
 
 
 def test_analytics_empty_returns_zeros(client, auth_headers) -> None:
@@ -125,61 +119,50 @@ def test_analytics_csv_report(client, auth_headers, seeded_usage) -> None:
     assert "weather" in body
 
 
-def test_purge_old_usage_logs_removes_expired_rows(db_engine) -> None:
+def test_purge_old_usage_logs_removes_expired_rows(db, analytics_user) -> None:
     """The retention job must delete history past the configured window."""
-    from datetime import datetime, timedelta, timezone
-
-    from app.models.usage_log import UsageLog
     from app.tasks.maintenance_tasks import purge_old_usage_logs
 
-    with patch("app.tasks.maintenance_tasks.SessionLocal") as mock_session:
-        from sqlalchemy.orm import sessionmaker
+    now = datetime.now(timezone.utc)
+    db.usage_logs.insert_many(
+        [
+            {
+                "user_id": analytics_user.id,
+                "endpoint": "/orchestrate/weather",
+                "response_time_ms": 10,
+                "status_code": 200,
+                "created_at": now - timedelta(days=200),
+            },
+            {
+                "user_id": analytics_user.id,
+                "endpoint": "/orchestrate/weather",
+                "response_time_ms": 10,
+                "status_code": 200,
+                "created_at": now - timedelta(days=1),
+            },
+        ]
+    )
 
-        session = sessionmaker(bind=db_engine)()
-        mock_session.return_value = session
-
-        now = datetime.now(timezone.utc)
-        session.add(
-            UsageLog(
-                user_id=1,
-                endpoint="/orchestrate/weather",
-                response_time_ms=10,
-                status_code=200,
-                created_at=now - timedelta(days=200),
-            )
-        )
-        session.add(
-            UsageLog(
-                user_id=1,
-                endpoint="/orchestrate/weather",
-                response_time_ms=10,
-                status_code=200,
-                created_at=now - timedelta(days=1),
-            )
-        )
-        session.commit()
-
+    with patch("app.tasks.maintenance_tasks.get_database") as mock_database:
+        mock_database.return_value = db
         result = purge_old_usage_logs()
 
     assert result["deleted_usage_logs"] == 1
-    remaining = session.scalars(select(UsageLog)).all()
-    assert len(remaining) == 1
+    remaining = db.client.execute("SELECT count(*) AS n FROM usage_logs")
+    assert remaining[0].rows[0][0] == 1
 
 
-def test_analytics_tenant_isolation(client, auth_headers, seeded_usage) -> None:
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "other@example.com",
-            "password": "securepass123",
-            "full_name": "Other",
-        },
+def test_analytics_tenant_isolation(client, db, analytics_user, seeded_usage) -> None:
+    from app.services import auth_service
+
+    other = db.users.create(
+        email="other@example.com",
+        first_name="Other",
+        last_name="Person",
+        created_at=datetime.now(timezone.utc),
     )
-    other_login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "other@example.com", "password": "securepass123"},
-    )
-    other_headers = {"Authorization": f"Bearer {other_login.json()['access_token']}"}
+    claims = auth_service.build_token_claims(other.id, other.email, other.tier)
+    other_headers = {"Authorization": f"Bearer {auth_service.create_access_token(claims)}"}
 
     response = client.get(
         "/api/v1/analytics/usage",

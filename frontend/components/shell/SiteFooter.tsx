@@ -18,22 +18,22 @@ export function SiteFooter() {
             <p className="label-wire mb-3">Product</p>
             <ul className="flex flex-col gap-2 text-ui">
               <li>
-                <Link href="/dashboard" className="text-muted transition-colors hover:text-ink">
+                <Link href="/dashboard" className="tap text-muted transition-colors hover:text-ink">
                   Dashboard
                 </Link>
               </li>
               <li>
-                <Link href="/api-keys" className="text-muted transition-colors hover:text-ink">
+                <Link href="/api-keys" className="tap text-muted transition-colors hover:text-ink">
                   API keys
                 </Link>
               </li>
               <li>
-                <Link href="/external-services" className="text-muted transition-colors hover:text-ink">
+                <Link href="/external-services" className="tap text-muted transition-colors hover:text-ink">
                   External services
                 </Link>
               </li>
               <li>
-                <Link href="/webhooks" className="text-muted transition-colors hover:text-ink">
+                <Link href="/webhooks" className="tap text-muted transition-colors hover:text-ink">
                   Webhooks
                 </Link>
               </li>
@@ -44,12 +44,12 @@ export function SiteFooter() {
             <p className="label-wire mb-3">Reference</p>
             <ul className="flex flex-col gap-2 text-ui">
               <li>
-                <Link href="/docs" className="text-muted transition-colors hover:text-ink">
+                <Link href="/docs" className="tap text-muted transition-colors hover:text-ink">
                   Documentation
                 </Link>
               </li>
               <li>
-                <Link href="/orchestrate" className="text-muted transition-colors hover:text-ink">
+                <Link href="/orchestrate" className="tap text-muted transition-colors hover:text-ink">
                   Playground
                 </Link>
               </li>
@@ -58,7 +58,7 @@ export function SiteFooter() {
                   href={footerNote.apiDocs}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-muted transition-colors hover:text-ink"
+                  className="tap text-muted transition-colors hover:text-ink"
                 >
                   Swagger UI
                 </a>
@@ -68,7 +68,7 @@ export function SiteFooter() {
                   href={footerNote.liveApi}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-muted transition-colors hover:text-ink"
+                  className="tap text-muted transition-colors hover:text-ink"
                 >
                   Live API
                 </a>

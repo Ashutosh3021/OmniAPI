@@ -4,9 +4,12 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: bash start.sh
+    # The schema is applied with plain DDL, so this is idempotent.
+    startCommand: bash -c "python -m app.db.bootstrap && bash start.sh"
     plan: free
-    healthCheckPath: /api/v1/health
+    # Liveness only: performs no dependency I/O, so it can never block the
+    # event loop or fail because the data store is briefly unreachable.
+    healthCheckPath: /api/v1/health/live
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -16,8 +19,12 @@ services:
         value: warning
       - key: PYTHON_VERSION
         value: "3.11.0"
-      - key: DATABASE_URL
+      - key: PYRONITES_URL
         sync: false   # Set manually in Render dashboard - contains secrets
+      - key: PYRONITES_KEY
+        sync: false   # Set manually in Render dashboard - contains secrets
+      - key: PYRONITES_PROJECT_ID
+        sync: false   # Set manually in Render dashboard
       - key: REDIS_URL
         sync: false   # Set manually in Render dashboard - contains secrets
       - key: SECRET_KEY
@@ -38,5 +45,99 @@ services:
         value: "1000"
       - key: RATE_LIMIT_ENTERPRISE
         value: "10000"
+      - key: RATE_LIMIT_OAUTH_PER_IP
+        value: "20"
+      - key: RATE_LIMIT_AUTH_WINDOW_SECONDS
+        value: "900"
       - key: ALLOWED_ORIGINS
         sync: false   # Set manually - your Vercel URL
+      # OAuth providers. Both are optional: an unset provider is simply not
+      # offered on the sign-in screen.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: OAUTH_REDIRECT_BASE_URL
+        sync: false
+      - key: OAUTH_SUCCESS_REDIRECT_URL
+        sync: false
+      - key: OAUTH_FAILURE_REDIRECT_URL
+        sync: false
+
+  # Outbound webhook delivery. Keep this on a paid plan: a free background
+  # worker sleeps after 15 minutes of inactivity, which delays queued
+  # deliveries to the user's endpoint.
+  - type: worker
+    name: omniapi-worker-webhooks
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.tasks.celery_app worker -Q webhooks --concurrency=4 --loglevel=info
+    plan: starter
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYRONITES_URL
+        sync: false
+      - key: PYRONITES_KEY
+        sync: false
+      - key: PYRONITES_PROJECT_ID
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+
+  # Retention and scheduled maintenance.
+  - type: worker
+    name: omniapi-worker-maintenance
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.tasks.celery_app worker -Q maintenance --concurrency=1 --loglevel=info
+    plan: free
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYRONITES_URL
+        sync: false
+      - key: PYRONITES_KEY
+        sync: false
+      - key: PYRONITES_PROJECT_ID
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+
+  # Celery beat — the scheduler that triggers the retention job.
+  - type: worker
+    name: omniapi-beat
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.tasks.celery_app beat --loglevel=info
+    plan: free
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYRONITES_URL
+        sync: false
+      - key: PYRONITES_KEY
+        sync: false
+      - key: PYRONITES_PROJECT_ID
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false

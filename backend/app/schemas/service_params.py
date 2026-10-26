@@ -34,9 +34,7 @@ class WeatherParams(ServiceParams):
     def _require_location(self) -> "WeatherParams":
         if self.city:
             if self.lat is not None or self.lon is not None:
-                raise ValueError(
-                    "weather accepts either 'city' or 'lat'/'lon', not both"
-                )
+                raise ValueError("weather accepts either 'city' or 'lat'/'lon', not both")
             return self
         if self.lat is None or self.lon is None:
             raise ValueError("weather requires 'city' or both 'lat' and 'lon'")

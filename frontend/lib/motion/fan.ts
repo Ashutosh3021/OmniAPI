@@ -34,7 +34,7 @@ export type FanGeometry = {
   height: number;
   spine: { x1: number; y1: number; x2: number; y2: number };
   origin: { x: number; y: number };
-  branches: { id: string; d: string }[];
+  branches: { id: string; d: string; end: { x: number; y: number } }[];
   nodes: FanNode[];
   gathers: { id: string; d: string }[];
   envelope: {
@@ -63,6 +63,7 @@ export function horizontalLayout(services: FanService[]): FanGeometry {
   const branches = lanes.map((lane, i) => ({
     id: `branch-${i}`,
     d: `M${spineX},${originY} C120,${originY} 152,${lane} 208,${lane} L272,${lane}`,
+    end: { x: 272, y: lane },
   }));
 
   const nodes: FanNode[] = services.map((s, i) => ({
@@ -117,32 +118,33 @@ export function verticalLayout(services: FanService[]): FanGeometry {
 
   const branches = lanes.map((lane, i) => ({
     id: `branch-${i}`,
-    d: `M16,22 C16,${lane} 22,${lane} 40,${lane} L54,${lane}`,
+    d: `M14,20 C14,${lane} 20,${lane} 34,${lane} L48,${lane}`,
+    end: { x: 48, y: lane },
   }));
 
   const nodes: FanNode[] = services.map((s, i) => ({
     id: `node-${i}`,
-    x: 62,
+    x: 60,
     y: lanes[i] - 8,
     w: 0,
     h: 0,
-    labelX: 62,
-    labelY: lanes[i] + 4,
+    labelX: 60,
+    labelY: lanes[i] + 5,
     metaX: 336,
-    metaY: lanes[i] + 4,
+    metaY: lanes[i] + 5,
     boxed: false,
   }));
 
   const gathers = lanes.map((lane, i) => ({
     id: `gather-${i}`,
-    d: `M${86 + i * 40},${lane + 9} L${86 + i * 40},${envelopeTop}`,
+    d: `M${92 + i * 40},${lane + 9} L${92 + i * 40},${envelopeTop}`,
   }));
 
   return {
     width,
     height,
-    spine: { x1: 16, y1: 22, x2: 16, y2: envelopeTop },
-    origin: { x: 16, y: 22 },
+    spine: { x1: 14, y1: 20, x2: 14, y2: envelopeTop },
+    origin: { x: 14, y: 20 },
     branches,
     nodes,
     gathers,

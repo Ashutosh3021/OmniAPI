@@ -9,7 +9,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776ab?style=for-the-badge&logo=python&logoColor=white&labelColor=000)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688?style=for-the-badge&logo=fastapi&logoColor=white&labelColor=000)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791?style=for-the-badge&logo=postgresql&logoColor=white&labelColor=000)
+![Pyronites](https://img.shields.io/badge/Pyronites-SQLite%20over%20HTTP-2d7a4d?style=for-the-badge&logo=sqlite&logoColor=white&labelColor=000)
 ![Redis](https://img.shields.io/badge/Redis-7+-DC382D?style=for-the-badge&logo=redis&logoColor=white&labelColor=000)
 ![Celery](https://img.shields.io/badge/Celery-5.3+-37B24D?style=for-the-badge&logo=celery&logoColor=white&labelColor=000)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white&labelColor=000)
@@ -77,7 +77,7 @@ graph TB
 
     %% Data layer
     subgraph Data_Layer
-        DB["🗄️ PostgreSQL\nMulti-Tenant DB"]
+        DB["🗄️ Pyronites\nMulti-Tenant DB"]
         REDIS["⚡ Redis\nCache & Pub/Sub"]
     end
 
@@ -159,30 +159,19 @@ sequenceDiagram
 
 End-to-end guide — from signing up to making real orchestrated calls from your own application.
 
-### Step 1 — Create an Account
+### Step 1 — Sign In
 
-Go to [omniapi3021.vercel.app](https://omniapi3021.vercel.app) and register.
+Go to [omniapi3021.vercel.app](https://omniapi3021.vercel.app) and sign in
+with Google or GitHub. There are no passwords: your account is created the
+first time a provider signs you in, and the flow ends with a one-time code
+being exchanged for your token pair:
 
 ```http
-POST /api/v1/auth/register
+POST /api/v1/auth/oauth/exchange
 Content-Type: application/json
 
 {
-  "full_name": "Jane Smith",
-  "email": "jane@example.com",
-  "password": "yourpassword"
-}
-```
-
-Then log in to get your JWT token pair:
-
-```http
-POST /api/v1/auth/login
-Content-Type: application/json
-
-{
-  "email": "jane@example.com",
-  "password": "yourpassword"
+  "code": "one-time-code-from-the-callback-redirect"
 }
 ```
 
@@ -193,7 +182,7 @@ Content-Type: application/json
 }
 ```
 
-Use `access_token` as a `Bearer` token for all dashboard API calls. The dashboard refreshes it automatically via `POST /api/v1/auth/refresh` when it expires.
+Use `access_token` as a `Bearer` token for all dashboard API calls. The dashboard refreshes it automatically via `POST /api/v1/auth/refresh` when it expires. See [docs/oauth-integration.md](./docs/oauth-integration.md) for the full flow.
 
 ---
 
@@ -587,21 +576,21 @@ User Request → Queue Job → Return Immediately → Process in Background
 
 ---
 
-### Decision 4: PostgreSQL for Relational Data
+### Decision 4: Pyronites for Relational Data
 
 **Problem:** Need to store users, API keys, external services, usage logs — all interconnected.
 
 ```
-┌──────────────────┬──────────────────────┐
-│ DECISION         │ PostgreSQL (SQL DB)  │
-├──────────────────┼──────────────────────┤
-│ TRADEOFF         │ Slower than NoSQL    │
-│                  │ for simple reads     │
-├──────────────────┼──────────────────────┤
-│ RESULT           │ ✅ ACID guarantees   │
-│                  │ ✅ Complex queries   │
-│                  │ ✅ Data integrity    │
-└──────────────────┴──────────────────────┘
+┌──────────────────┬──────────────────────────────────┐
+│ DECISION         │ Pyronites (SQLite over HTTP)     │
+├──────────────────┼──────────────────────────────────┤
+│ TRADEOFF         │ Every statement is a network     │
+│                  │ round trip (~450 ms)             │
+├──────────────────┼──────────────────────────────────┤
+│ RESULT           │ ✅ ACID guarantees               │
+│                  │ ✅ No server to operate          │
+│                  │ ✅ One idempotent DDL to apply   │
+└──────────────────┴──────────────────────────────────┘
 ```
 
 ---
@@ -613,9 +602,15 @@ erDiagram
     USER {
         int user_id PK
         string email
-        string password_hash
         string tier
         timestamp created_at
+    }
+
+    OAUTH_IDENTITY {
+        int id PK
+        int user_id FK
+        string provider
+        string provider_user_id
     }
 
     API_KEY {
@@ -657,6 +652,7 @@ erDiagram
     USER ||--o{ EXTERNAL_SERVICE : owns
     USER ||--o{ USAGE_LOG : generates
     USER ||--o{ WEBHOOK : subscribes
+    USER ||--o{ OAUTH_IDENTITY : signs_in_with
     EXTERNAL_SERVICE ||--o{ USAGE_LOG : logs
 ```
 
@@ -667,11 +663,11 @@ erDiagram
 | Component | Technology | Why This Choice |
 |-----------|------------|-----------------|
 | **Backend Framework** | FastAPI | Async-first, auto-docs, blazing fast |
-| **Database** | PostgreSQL | ACID, relational data, proven at scale |
+| **Database** | Pyronites (SQLite over HTTP) | ACID relational data, no server to operate |
 | **Cache/Queue Broker** | Redis | Sub-millisecond speed, pub/sub support |
 | **Job Queue** | Celery | Distributed tasks, retries, scheduling |
-| **ORM** | SQLAlchemy | Type hints, migration support, flexibility |
-| **Auth** | JWT + OAuth2 | Stateless, industry standard |
+| **Schema** | Plain DDL + repositories | One idempotent `schema.sql`, no ORM or migration runner |
+| **Auth** | Google/GitHub OAuth + JWT | No passwords to store, industry standard |
 | **Testing** | pytest | Fast, fixtures, 80%+ coverage goal |
 | **Containerization** | Docker Compose | Dev/prod parity, easy scaling |
 | **CI/CD** | GitHub Actions | Free, integrated with repos |
@@ -684,6 +680,6 @@ erDiagram
 ```bash
 ✅ Python 3.11+
 ✅ Docker & Docker Compose
-✅ PostgreSQL 15+
+✅ A Pyronites project (read/write API key)
 ✅ Redis 7+
 ```

@@ -1,17 +1,13 @@
 """Webhook delivery attempt and event payload model."""
 
+from __future__ import annotations
+
 import enum
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
-
-if TYPE_CHECKING:
-    from app.models.user import User
-    from app.models.webhook import Webhook
+from app.models.parsing import parse_datetime
 
 
 class WebhookEventStatus(str, enum.Enum):
@@ -22,45 +18,44 @@ class WebhookEventStatus(str, enum.Enum):
     FAILED = "failed"
 
 
-class WebhookEvent(Base):
+@dataclass
+class WebhookEvent:
     """Queued or completed webhook delivery with retry metadata."""
 
-    __tablename__ = "webhook_events"
+    id: int
+    webhook_id: int
+    user_id: int
+    event_type: str
+    status: str
+    attempt_count: int
+    created_at: datetime
+    payload: str | None = None
+    http_status_code: int | None = None
+    error_message: str | None = None
+    delivered_at: datetime | None = None
+    next_retry_at: datetime | None = None
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    webhook_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("webhooks.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    status: Mapped[WebhookEventStatus] = mapped_column(
-        Enum(
-            WebhookEventStatus,
-            name="webhook_event_status",
-            values_callable=lambda x: [e.value for e in x],
-        ),
-        nullable=False,
-        server_default=WebhookEventStatus.PENDING.value,
-    )
-    http_status_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
-    )
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    next_retry_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    webhook: Mapped["Webhook"] = relationship("Webhook", back_populates="events")
-    user: Mapped["User"] = relationship("User", back_populates="webhook_events")
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "WebhookEvent":
+        """Build a webhook event from a database row."""
+        return cls(
+            id=int(row["id"]),
+            webhook_id=int(row["webhook_id"]),
+            user_id=int(row["user_id"]),
+            event_type=row["event_type"],
+            status=str(row["status"]),
+            attempt_count=int(row.get("attempt_count") or 0),
+            created_at=parse_datetime(row["created_at"]),  # type: ignore[arg-type]
+            payload=row.get("payload"),
+            http_status_code=(
+                int(row["http_status_code"]) if row.get("http_status_code") is not None else None
+            ),
+            error_message=row.get("error_message"),
+            delivered_at=parse_datetime(row.get("delivered_at")),
+            next_retry_at=parse_datetime(row.get("next_retry_at")),
+        )
 
     def __repr__(self) -> str:
         return (
-            f"<WebhookEvent(id={self.id}, webhook_id={self.webhook_id}, "
-            f"status={self.status})>"
+            f"<WebhookEvent(id={self.id}, webhook_id={self.webhook_id}, " f"status={self.status})>"
         )

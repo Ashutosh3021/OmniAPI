@@ -12,8 +12,7 @@ export default function DocsPage() {
   return (
     <div className="mx-auto w-full max-w-shell px-4 py-10 md:px-8 lg:py-16">
       <header className="mb-8 border-b border-ink/12 pb-8">
-        <p className="label-wire">reference</p>
-        <h1 className="t-title mt-3 text-ink">Documentation</h1>
+        <h1 className="t-title text-ink">Documentation</h1>
         <p className="mt-2 max-w-prose text-ui text-muted">
           Guides, examples and the full endpoint list for the OmniAPI gateway.
         </p>
@@ -21,10 +20,11 @@ export default function DocsPage() {
 
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:gap-gutter">
         {/* The rail is a spine: one tick per section. */}
-        <aside className="lg:col-span-3">
+        <aside className="lg:col-span-2">
           <div className="sticky top-24">
             <p className="label-wire mb-3 hidden lg:block">Sections</p>
             <div className="relative">
+              <span data-pulse-rail className="rail-glow" aria-hidden />
               <svg
                 className="pointer-events-none absolute left-0 top-0 hidden h-full w-px lg:block"
                 preserveAspectRatio="none"
@@ -75,7 +75,10 @@ export default function DocsPage() {
           </div>
         </aside>
 
-        <article className="min-w-0 lg:col-span-9 lg:col-start-4">
+        <article className="min-w-0 lg:col-span-10 lg:col-start-3">
+          <h2 className="t-heading mb-6 text-ink">
+            {DOCS_SECTIONS.find((s) => s.id === active)?.title}
+          </h2>
           <Section />
         </article>
       </div>

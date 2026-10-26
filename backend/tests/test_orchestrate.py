@@ -6,9 +6,7 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import select
 
-from app.models.usage_log import UsageLog
 from app.services.cache_service import CacheService
 
 
@@ -103,7 +101,7 @@ def configured_weather_and_news(client, auth_headers) -> None:
 
 
 def test_orchestrate_weather_success(
-    client, auth_headers, configured_weather, db_session
+    client, auth_headers, configured_weather, db, test_user
 ) -> None:
     with _orchestrate_mocks(fetch_map={"weather": _weather_payload()}):
         response = client.post(
@@ -123,13 +121,13 @@ def test_orchestrate_weather_success(
     assert response.headers["X-RateLimit-Remaining"]
     assert response.headers["X-Cache"] == "MISS"
 
-    logs = db_session.scalars(select(UsageLog)).all()
+    logs = db.usage_logs.list_for_user(test_user.id)
     assert len(logs) == 1
     assert logs[0].cache_hit is False
 
 
 def test_orchestrate_cache_hit_on_second_request(
-    client, auth_headers, configured_weather, db_session
+    client, auth_headers, configured_weather, db, test_user
 ) -> None:
     with _orchestrate_mocks(
         fetch_map={"weather": _weather_payload()},
@@ -147,7 +145,7 @@ def test_orchestrate_cache_hit_on_second_request(
     assert first.json()["results"][0]["cache_hit"] is False
     assert second.json()["results"][0]["cache_hit"] is True
 
-    logs = db_session.scalars(select(UsageLog)).all()
+    logs = db.usage_logs.list_for_user(test_user.id)
     assert sum(1 for log in logs if log.cache_hit) == 1
     assert sum(1 for log in logs if not log.cache_hit) == 1
 
@@ -176,10 +174,7 @@ def test_orchestrate_multiple_services_parallel(
     assert results["news"]["success"] is True
 
 
-def test_orchestrate_partial_failure(
-    client, auth_headers, configured_weather_and_news
-) -> None:
-    from app.external_apis.news_api import NewsAPIClient
+def test_orchestrate_partial_failure(client, auth_headers, configured_weather_and_news) -> None:
     from app.external_apis.weather_api import WeatherAPIClient
     from app.utils.exceptions import ExternalAPIError
 
@@ -212,9 +207,7 @@ def test_orchestrate_fans_out_in_parallel(
 ) -> None:
     """The total time must be the slowest single call, not the sum of both."""
     import asyncio
-    import time
 
-    from app.external_apis.news_api import NewsAPIClient
     from app.external_apis.weather_api import WeatherAPIClient
 
     async def fetch_side_effect(client, _params):
@@ -224,7 +217,6 @@ def test_orchestrate_fans_out_in_parallel(
         return _news_payload()
 
     with _orchestrate_mocks(fetch_side_effect=fetch_side_effect):
-        start = time.monotonic()
         response = client.post(
             "/api/v1/orchestrate",
             headers=auth_headers,
@@ -236,7 +228,6 @@ def test_orchestrate_fans_out_in_parallel(
                 },
             },
         )
-        elapsed = time.monotonic() - start
 
     assert response.status_code == 200
     results = response.json()["results"]
@@ -307,9 +298,7 @@ def test_orchestrate_requires_auth(client) -> None:
     assert response.status_code == 401
 
 
-def test_orchestrate_with_api_key(
-    client, auth_headers, configured_weather
-) -> None:
+def test_orchestrate_with_api_key(client, auth_headers, configured_weather) -> None:
     create = client.post(
         "/api/v1/api-keys",
         headers=auth_headers,

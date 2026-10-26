@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings with Supabase and Redis configuration."""
+    """Application settings with Pyronites and Redis configuration."""
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),
@@ -25,14 +25,11 @@ class Settings(BaseSettings):
     api_title: str = "OmniAPI"
     api_version: str = "1.0.0"
 
-    # Supabase
-    supabase_url: str = ""
-    supabase_key: str = ""
-    supabase_db_password: str = ""
-
-    # Database
-    database_url: str = Field(..., description="PostgreSQL connection string (Supabase)")
-    db_echo: bool = False
+    # Database — Pyronites
+    pyronites_url: str = Field(..., description="Base URL of the Pyronites backend")
+    pyronites_key: str = Field(..., description="Pyronites API key for the app's project")
+    pyronites_project_id: str = Field(..., description="Pyronites project the app reads and writes")
+    pyronites_timeout: float = Field(30.0, description="Per-request timeout, in seconds")
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -45,11 +42,9 @@ class Settings(BaseSettings):
     rate_limit_pro: int = 1000
     rate_limit_enterprise: int = 10000
 
-    # Authentication throttling. Login and registration are the only
-    # unauthenticated write endpoints, so they carry their own limits.
-    rate_limit_login_per_ip: int = 20
-    rate_limit_login_per_account: int = 5
-    rate_limit_register_per_ip: int = 5
+    # Authentication throttling. The OAuth entry points are the only
+    # unauthenticated write endpoints, so they carry their own limit.
+    rate_limit_oauth_per_ip: int = 20
     rate_limit_auth_window_seconds: int = 900
 
     # Honour X-Forwarded-For only when a trusted proxy sits in front of the
@@ -73,6 +68,28 @@ class Settings(BaseSettings):
         description="Fernet key (32-byte base64) for encrypting external API credentials",
     )
 
+    # OAuth (Google / GitHub)
+    # The provider applications live in the Google and GitHub consoles; their
+    # redirect URI must point at {oauth_redirect_base_url}/api/v1/auth/oauth/{provider}/callback
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    oauth_redirect_base_url: str = Field(
+        "http://localhost:8000",
+        description="Public base URL of this API, used to build the provider callback URL",
+    )
+    oauth_success_redirect_url: str = Field(
+        "http://localhost:3000/auth/callback",
+        description="Frontend page the browser returns to after a successful sign-in",
+    )
+    oauth_failure_redirect_url: str = Field(
+        "http://localhost:3000/login?error=oauth_failed",
+        description="Frontend page the browser returns to after a failed sign-in",
+    )
+    oauth_state_ttl_seconds: int = 600
+    oauth_code_ttl_seconds: int = 300
+
     # CORS
     allowed_origins: str = "http://localhost:3000"
 
@@ -84,41 +101,16 @@ class Settings(BaseSettings):
             raise ValueError("Wildcard CORS (*) is not allowed in production")
         return value
 
-    @field_validator("database_url")
+    @field_validator("pyronites_url")
     @classmethod
-    def validate_database_url(cls, value: str) -> str:
-        """Ensure DATABASE_URL is a valid PostgreSQL/Supabase connection string."""
+    def validate_pyronites_url(cls, value: str) -> str:
+        """Ensure the Pyronites base URL is an absolute http(s) URL."""
         if not value:
-            raise ValueError("DATABASE_URL is required")
-
-        normalized = value.replace("postgresql+psycopg2://", "postgresql://")
-        parsed = urlparse(normalized)
-
-        if parsed.scheme == "sqlite":
-            return value
-
-        if parsed.scheme not in ("postgresql", "postgres"):
-            raise ValueError(
-                "DATABASE_URL must use postgresql:// scheme (Supabase PostgreSQL)"
-            )
-        if not parsed.hostname:
-            raise ValueError("DATABASE_URL must include a hostname")
-        if not parsed.path or parsed.path == "/":
-            raise ValueError("DATABASE_URL must include a database name")
-
-        return value
-
-    @property
-    def sqlalchemy_database_url(self) -> str:
-        """Connection URL for SQLAlchemy with psycopg2 driver."""
-        url = self.database_url
-        if url.startswith("sqlite"):
-            return url
-        if url.startswith("postgresql://"):
-            return url.replace("postgresql://", "postgresql+psycopg2://", 1)
-        if url.startswith("postgres://"):
-            return url.replace("postgres://", "postgresql+psycopg2://", 1)
-        return url
+            raise ValueError("PYRONITES_URL is required")
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("PYRONITES_URL must be an absolute http(s) URL")
+        return value.rstrip("/")
 
     @property
     def cors_origins(self) -> List[str]:
@@ -130,18 +122,20 @@ class Settings(BaseSettings):
         return self.environment == "production"
 
     @property
-    def sqlalchemy_engine_kwargs(self) -> dict:
-        """SQLAlchemy engine options including connection pooling."""
-        kwargs: dict = {"echo": self.db_echo}
-        if not self.database_url.startswith("sqlite"):
-            kwargs.update(
-                {
-                    "pool_pre_ping": True,
-                    "pool_size": 10,
-                    "max_overflow": 20,
-                }
-            )
-        return kwargs
+    def oauth_providers(self) -> List[str]:
+        """Providers that are configured well enough to be offered."""
+        available = []
+        if self.google_client_id and self.google_client_secret:
+            available.append("google")
+        if self.github_client_id and self.github_client_secret:
+            available.append("github")
+        return available
+
+    def oauth_callback_url(self, provider: str) -> str:
+        """The callback URL registered with a provider application."""
+        return (
+            f"{self.oauth_redirect_base_url.rstrip('/')}" f"/api/v1/auth/oauth/{provider}/callback"
+        )
 
 
 @lru_cache

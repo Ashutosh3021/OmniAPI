@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class HealthChecks(BaseModel):
     """Per-dependency health probe results."""
 
-    database: str = Field(..., description="PostgreSQL connectivity")
+    database: str = Field(..., description="Pyronites data-store connectivity")
     redis: str = Field(..., description="Redis connectivity")
     celery: str = Field(..., description="Celery worker availability")
 

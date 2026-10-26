@@ -1,18 +1,16 @@
 """Server-side record of issued refresh tokens."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
-
-if TYPE_CHECKING:
-    from app.models.user import User
+from app.models.parsing import parse_datetime
 
 
-class RefreshToken(Base):
+@dataclass
+class RefreshToken:
     """A refresh token issued to a user.
 
     The raw token is never stored — only its SHA-256 hash. Rotation replaces
@@ -20,36 +18,35 @@ class RefreshToken(Base):
     means it leaked, so the whole family is revoked.
     """
 
-    __tablename__ = "refresh_tokens"
-    __table_args__ = (
-        Index("ix_refresh_tokens_user_id", "user_id"),
-        Index("ix_refresh_tokens_family_id", "family_id"),
-        Index("ix_refresh_tokens_token_hash", "token_hash"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
-    family_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    replaced_by_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("refresh_tokens.id", ondelete="SET NULL"), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-    user: Mapped["User"] = relationship("User")
+    id: int
+    user_id: int
+    token_hash: str
+    family_id: str
+    expires_at: datetime
+    created_at: datetime
+    revoked_at: datetime | None = None
+    replaced_by_id: int | None = None
 
     @property
     def is_revoked(self) -> bool:
         """Whether this token has been revoked or replaced."""
         return self.revoked_at is not None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "RefreshToken":
+        """Build a refresh token from a database row."""
+        return cls(
+            id=int(row["id"]),
+            user_id=int(row["user_id"]),
+            token_hash=row["token_hash"],
+            family_id=row["family_id"],
+            expires_at=parse_datetime(row["expires_at"]),  # type: ignore[arg-type]
+            created_at=parse_datetime(row["created_at"]),  # type: ignore[arg-type]
+            revoked_at=parse_datetime(row.get("revoked_at")),
+            replaced_by_id=(
+                int(row["replaced_by_id"]) if row.get("replaced_by_id") is not None else None
+            ),
+        )
 
     def __repr__(self) -> str:
         return f"<RefreshToken(id={self.id}, user_id={self.user_id})>"

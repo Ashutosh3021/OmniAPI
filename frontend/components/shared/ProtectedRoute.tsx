@@ -3,8 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { Spinner } from "./Spinner";
 
+/**
+ * The page is always rendered, so its heading, landmarks and copy are in the
+ * first byte of HTML. A missing session covers the page instead of replacing
+ * it: the document stays real for crawlers and the measured first paint.
+ */
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
@@ -15,16 +19,14 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  if (isLoading) {
+  if (!isLoading && !isAuthenticated) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-ground">
-        <Spinner full label="Checking your session" />
+      <div className="fixed inset-0 z-50 grid place-items-center bg-ground">
+        <p className="label-wire" role="status">
+          Redirecting to sign in
+        </p>
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    return null;
   }
 
   return <>{children}</>;

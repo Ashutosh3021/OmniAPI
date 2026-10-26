@@ -21,12 +21,7 @@ from app.external_apis.base import BaseAPIClient
 from app.external_apis.news_api import NewsAPIClient
 from app.external_apis.stock_api import StockAPIClient
 from app.external_apis.weather_api import WeatherAPIClient
-from app.schemas.service_params import (
-    NewsParams,
-    ServiceParams,
-    StockParams,
-    WeatherParams,
-)
+from app.schemas.service_params import NewsParams, ServiceParams, StockParams, WeatherParams
 
 
 @dataclass(frozen=True)
@@ -126,9 +121,7 @@ def _param_spec(params_model: Type[BaseModel]) -> dict[str, dict[str, Any]]:
             entry["description"] = field.description
         if not field.is_required() and field.default is not None:
             entry["default"] = field.default
-        example = (params_model.model_fields[name].json_schema_extra or {}).get(
-            "examples"
-        )
+        example = (params_model.model_fields[name].json_schema_extra or {}).get("examples")
         if example:
             entry["example"] = example
         spec[name] = entry

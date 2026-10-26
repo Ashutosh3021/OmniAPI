@@ -1,32 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Spinner } from "@/components/shared/Spinner";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { MetricStrip } from "@/components/dashboard/MetricStrip";
 import { ServiceTable } from "@/components/dashboard/ServiceTable";
+import { BarList } from "@/components/charts/BarList";
+import { CacheRing } from "@/components/charts/Ring";
 import { ExportReport } from "@/components/analytics/ExportReport";
 import { api } from "@/lib/api";
 import type { AnalyticsResponse } from "@/types/analytics";
-
-// Charts are code-heavy. They load only once there is data to draw.
-const VolumeBarChart = dynamic(
-  () => import("@/components/charts/BarChart").then((m) => m.VolumeBarChart),
-  {
-    ssr: false,
-    loading: () => <div className="h-[260px] w-full" aria-hidden />,
-  }
-);
-
-const CachePieChart = dynamic(
-  () => import("@/components/charts/PieChart").then((m) => m.CachePieChart),
-  {
-    ssr: false,
-    loading: () => <div className="h-[220px] w-full" aria-hidden />,
-  }
-);
 
 const PERIODS = [
   { value: "last_24h", label: "24 hours" },
@@ -147,37 +131,29 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
             <section className="panel p-5 md:p-7 lg:col-span-7">
               <h2 className="t-subhead mb-1 text-ink">Calls per service</h2>
-              <p className="mb-4 text-meta text-muted">
+              <p className="mb-8 text-meta text-muted">
                 Which providers took the traffic.
               </p>
-              <VolumeBarChart
-                data={rows.map((r) => ({ label: r.service_name, value: r.call_count }))}
-                height={260}
+              <BarList
+                rows={rows.map((r) => ({
+                  label: r.service_name,
+                  value: r.call_count,
+                }))}
               />
             </section>
 
             <section className="panel flex flex-col p-5 md:p-7 lg:col-span-5">
               <h2 className="t-subhead mb-1 text-ink">Cache share</h2>
-              <p className="mb-2 text-meta text-muted">
+              <p className="mb-4 text-meta text-muted">
                 How much of the traffic Redis absorbed.
               </p>
-              <div className="flex-1">
-                <CachePieChart
-                  data={[
-                    { name: "Cache hit", value: metrics.cache_hits },
-                    {
-                      name: "Cache miss",
-                      value: Math.max(
-                        metrics.total_calls - metrics.cache_hits,
-                        0
-                      ),
-                    },
-                  ]}
+              <div className="flex flex-1 items-center justify-center">
+                <CacheRing
+                  value={metrics.cache_hits}
+                  total={metrics.total_calls}
+                  caption="from cache"
                 />
               </div>
-              <p className="mt-2 text-center text-[2rem] font-bold leading-none tracking-[-0.03em] num text-ink [font-variation-settings:'wdth'_108]">
-                {Math.round(metrics.cache_hit_rate * 100)}%
-              </p>
             </section>
           </div>
 

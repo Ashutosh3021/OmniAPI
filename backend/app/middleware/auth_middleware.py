@@ -2,35 +2,29 @@
 
 from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
-from app.db.session import get_db
+
+from app.db.database import Database, get_db
 from app.middleware.rate_limit import apply_rate_limit
 from app.models.user import User
-from app.services import auth_service
+from app.services import auth_service, user_cache
 from app.utils.exceptions import AuthenticationError, AuthorizationError
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-
-
-def _load_user(db: Session, user_pk: int) -> User | None:
-    """Blocking user lookup. Runs in a worker thread."""
-    return db.scalar(select(User).where(User.id == user_pk))
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/oauth/exchange")
 
 
 async def get_current_user(
     request: Request,
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
 ) -> User:
     """
     Decode JWT, load user from database, enforce active status and rate limits.
 
-    The database lookup is dispatched to a worker thread: it is blocking I/O,
-    and running it on the event loop would stall every concurrent request
-    for the duration of the query.
+    The user row is read through a short-lived cache, so the data store is
+    only consulted on a miss. The lookup is dispatched to a worker thread
+    either way: it is blocking I/O, and running it on the event loop would
+    stall every concurrent request for the duration of the round trip.
 
     Raises 401 for invalid tokens or missing users; 403 for inactive users.
     """
@@ -48,7 +42,7 @@ async def get_current_user(
     except (TypeError, ValueError) as exc:
         raise AuthenticationError() from exc
 
-    user = await run_in_threadpool(_load_user, db, user_pk)
+    user = await user_cache.cached_user(db, user_pk)
     if user is None:
         raise AuthenticationError("User not found")
 

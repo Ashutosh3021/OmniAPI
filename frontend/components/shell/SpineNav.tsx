@@ -21,6 +21,7 @@ export function SpineNav({ onNavigate, className }: SpineNavProps) {
 
   return (
     <div className={cn("relative", className)}>
+      <span data-pulse-rail className="rail-glow" aria-hidden />
       <svg
         className="pointer-events-none absolute left-0 top-0 h-full w-px"
         preserveAspectRatio="none"

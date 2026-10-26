@@ -1,10 +1,10 @@
 """API key management endpoints (JWT-authenticated, tenant-scoped)."""
 
-from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 
-from app.db.session import get_db
+from fastapi import APIRouter, Depends, status
+
+from app.db.database import Database, get_db
 from app.middleware.tenant_middleware import get_tenant_id
 from app.models.api_key import APIKey
 from app.models.user import User
@@ -30,7 +30,7 @@ def _to_response(api_key: APIKey) -> APIKeyResponse:
 @router.post("", response_model=APIKeyCreatedResponse, status_code=status.HTTP_201_CREATED)
 def create_api_key(
     body: APIKeyCreate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> APIKeyCreatedResponse:
@@ -38,16 +38,13 @@ def create_api_key(
     _ = tenant_id  # enforce tenant context from JWT, not client input
 
     raw_key = api_key_service.generate_api_key()
-    api_key = APIKey(
+    api_key = db.api_keys.create(
         user_id=current_user.id,
         key_hash=api_key_service.hash_api_key(raw_key),
         name=body.name,
         expires_at=body.expires_at,
-        is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
-    db.add(api_key)
-    db.commit()
-    db.refresh(api_key)
 
     WebhookService(db).dispatch_event(
         tenant_id=str(current_user.id),
@@ -61,36 +58,29 @@ def create_api_key(
 
 @router.get("", response_model=list[APIKeyResponse])
 def list_api_keys(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> list[APIKeyResponse]:
     """List all API keys for the current tenant (no raw keys)."""
     _ = tenant_id
-    stmt = (
-        select(APIKey)
-        .where(APIKey.user_id == current_user.id)
-        .order_by(APIKey.created_at.desc())
-    )
-    keys = db.scalars(stmt).all()
+    keys = db.api_keys.list_for_user(current_user.id)
     return [_to_response(key) for key in keys]
 
 
 @router.get("/{key_id}", response_model=APIKeyResponse)
 def get_api_key(
     key_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> APIKeyResponse:
     """Get a specific API key by ID for the current tenant (no raw key)."""
     _ = tenant_id
-    api_key = db.scalar(
-        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
-    )
+    api_key = db.api_keys.get_for_user(key_id, current_user.id)
     if api_key is None:
         raise ResourceNotFoundError("API key not found")
-    
+
     return _to_response(api_key)
 
 
@@ -98,7 +88,7 @@ def get_api_key(
 def update_api_key(
     key_id: int,
     body: APIKeyUpdate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> APIKeyResponse:
@@ -108,38 +98,32 @@ def update_api_key(
     produced remains attributable; deleting removes it entirely.
     """
     _ = tenant_id
-    api_key = db.scalar(
-        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
+    if db.api_keys.get_for_user(key_id, current_user.id) is None:
+        raise ResourceNotFoundError("API key not found")
+
+    api_key = db.api_keys.update(
+        key_id,
+        name=body.name,
+        expires_at=body.expires_at,
+        is_active=body.is_active,
+        updated_at=datetime.now(timezone.utc),
     )
     if api_key is None:
         raise ResourceNotFoundError("API key not found")
 
-    if body.name is not None:
-        api_key.name = body.name
-    if body.expires_at is not None:
-        api_key.expires_at = body.expires_at
-    if body.is_active is not None:
-        api_key.is_active = body.is_active
-
-    db.commit()
-    db.refresh(api_key)
     return _to_response(api_key)
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_api_key(
     key_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> None:
     """Permanently delete an API key for the current tenant."""
     _ = tenant_id
-    api_key = db.scalar(
-        select(APIKey).where(APIKey.id == key_id, APIKey.user_id == current_user.id)
-    )
-    if api_key is None:
+    if db.api_keys.get_for_user(key_id, current_user.id) is None:
         raise ResourceNotFoundError("API key not found")
 
-    db.delete(api_key)
-    db.commit()
+    db.api_keys.delete(key_id)

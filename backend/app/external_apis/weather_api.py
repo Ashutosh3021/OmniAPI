@@ -49,9 +49,7 @@ class WeatherAPIClient(BaseAPIClient):
             # 4xx (other than 408/429) means the request itself is wrong;
             # retrying it will not help.
             retryable = status_code >= 500 or status_code in (408, 429)
-            raise ExternalAPIError(
-                f"Weather API returned {status_code}", retryable=retryable
-            ) from exc
+            raise ExternalAPIError(self.upstream_error(status_code), retryable=retryable) from exc
         except httpx.HTTPError as exc:
             raise ExternalAPIError("Weather API request failed") from exc
 

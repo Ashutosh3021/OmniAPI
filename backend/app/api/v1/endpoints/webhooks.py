@@ -4,10 +4,8 @@ import secrets
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.database import Database, get_db
 from app.middleware.tenant_middleware import get_tenant_id
 from app.models.user import User
 from app.models.webhook import Webhook
@@ -21,7 +19,7 @@ from app.schemas.webhook import (
     WebhookResponse,
     WebhookUpdate,
 )
-from app.services.webhook_service import WebhookService, _utc_now_iso
+from app.services.webhook_service import _utc_now_iso
 from app.tasks.webhook_tasks import dispatch_webhook
 from app.utils import encryption
 from app.utils.decorators import require_auth
@@ -57,134 +55,105 @@ def _to_event_delivery(event: WebhookEvent) -> WebhookEventDelivery:
 @router.post("", response_model=WebhookCreatedResponse, status_code=status.HTTP_201_CREATED)
 def create_webhook(
     body: WebhookCreate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> WebhookCreatedResponse:
     _ = tenant_id
+    from datetime import datetime, timezone
+
     signing_secret = secrets.token_hex(32)
-    webhook = Webhook(
+    webhook = db.webhooks.create(
         user_id=current_user.id,
-        url=body.url,
         event_type=body.event_type.value,
+        url=body.url,
         secret_encrypted=encryption.encrypt(signing_secret),
-        is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
-    db.add(webhook)
-    db.commit()
-    db.refresh(webhook)
     response = _to_response(webhook)
     return WebhookCreatedResponse(**response.model_dump(), secret=signing_secret)
 
 
 @router.get("", response_model=list[WebhookResponse])
 def list_webhooks(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> list[WebhookResponse]:
     _ = tenant_id
-    stmt = (
-        select(Webhook)
-        .where(Webhook.user_id == current_user.id)
-        .order_by(Webhook.created_at.desc())
-    )
-    return [_to_response(w) for w in db.scalars(stmt).all()]
+    webhooks = db.webhooks.list_for_user(current_user.id)
+    return [_to_response(w) for w in webhooks]
 
 
 @router.get("/{webhook_id}", response_model=WebhookDetailResponse)
 def get_webhook(
     webhook_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> WebhookDetailResponse:
     _ = tenant_id
-    webhook = db.scalar(
-        select(Webhook).where(
-            Webhook.id == webhook_id,
-            Webhook.user_id == current_user.id,
-        )
-    )
+    webhook = db.webhooks.get_for_user(webhook_id, current_user.id)
     if webhook is None:
         raise ResourceNotFoundError("Webhook not found")
 
-    events_stmt = (
-        select(WebhookEvent)
-        .where(WebhookEvent.webhook_id == webhook_id)
-        .order_by(WebhookEvent.created_at.desc())
-        .limit(10)
-    )
-    recent = [_to_event_delivery(e) for e in db.scalars(events_stmt).all()]
+    recent = db.webhook_events.list_recent_for_webhook(webhook_id, limit=10)
 
     base = _to_response(webhook)
-    return WebhookDetailResponse(**base.model_dump(), recent_events=recent)
+    return WebhookDetailResponse(
+        **base.model_dump(), recent_events=[_to_event_delivery(e) for e in recent]
+    )
 
 
 @router.patch("/{webhook_id}", response_model=WebhookResponse)
 def update_webhook(
     webhook_id: int,
     body: WebhookUpdate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> WebhookResponse:
     _ = tenant_id
-    webhook = db.scalar(
-        select(Webhook).where(
-            Webhook.id == webhook_id,
-            Webhook.user_id == current_user.id,
-        )
+    from datetime import datetime, timezone
+
+    if db.webhooks.get_for_user(webhook_id, current_user.id) is None:
+        raise ResourceNotFoundError("Webhook not found")
+
+    webhook = db.webhooks.update(
+        webhook_id,
+        url=body.url,
+        is_active=body.is_active,
+        updated_at=datetime.now(timezone.utc),
     )
     if webhook is None:
         raise ResourceNotFoundError("Webhook not found")
 
-    if body.url is not None:
-        webhook.url = body.url
-    if body.is_active is not None:
-        webhook.is_active = body.is_active
-
-    db.commit()
-    db.refresh(webhook)
     return _to_response(webhook)
 
 
 @router.delete("/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_webhook(
     webhook_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> None:
     _ = tenant_id
-    webhook = db.scalar(
-        select(Webhook).where(
-            Webhook.id == webhook_id,
-            Webhook.user_id == current_user.id,
-        )
-    )
-    if webhook is None:
+    if db.webhooks.get_for_user(webhook_id, current_user.id) is None:
         raise ResourceNotFoundError("Webhook not found")
 
-    db.delete(webhook)
-    db.commit()
+    db.webhooks.delete(webhook_id)
 
 
 @router.post("/{webhook_id}/test", status_code=status.HTTP_202_ACCEPTED)
 def test_webhook(
     webhook_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> dict:
     _ = tenant_id
-    webhook = db.scalar(
-        select(Webhook).where(
-            Webhook.id == webhook_id,
-            Webhook.user_id == current_user.id,
-        )
-    )
-    if webhook is None:
+    if db.webhooks.get_for_user(webhook_id, current_user.id) is None:
         raise ResourceNotFoundError("Webhook not found")
 
     payload = WebhookEventPayload(
@@ -194,5 +163,5 @@ def test_webhook(
         timestamp=_utc_now_iso(),
         data={"message": "OmniAPI webhook test event"},
     )
-    dispatch_webhook.delay(webhook_id=str(webhook.id), payload=payload.model_dump())
+    dispatch_webhook.delay(webhook_id=str(webhook_id), payload=payload.model_dump())
     return {"status": "queued", "webhook_id": webhook_id}

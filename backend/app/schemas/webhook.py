@@ -3,6 +3,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -15,6 +16,18 @@ class WebhookEventType(str, Enum):
     API_KEY_CREATED = "api_key.created"
 
 
+def _validate_https_url(value: str) -> str:
+    """Accept only absolute HTTPS URLs with a host and no embedded credentials."""
+    parsed = urlparse(value)
+    if parsed.scheme != "https":
+        raise ValueError("Webhook URL must use HTTPS")
+    if not parsed.hostname:
+        raise ValueError("Webhook URL must include a host")
+    if parsed.username or parsed.password:
+        raise ValueError("Webhook URL must not include credentials")
+    return value
+
+
 class WebhookCreate(BaseModel):
     """Register a new outbound webhook."""
 
@@ -24,9 +37,7 @@ class WebhookCreate(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_https_url(cls, value: str) -> str:
-        if not value.lower().startswith("https://"):
-            raise ValueError("Webhook URL must use HTTPS")
-        return value
+        return _validate_https_url(value)
 
 
 class WebhookUpdate(BaseModel):
@@ -38,9 +49,9 @@ class WebhookUpdate(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_https_url(cls, value: Optional[str]) -> Optional[str]:
-        if value is not None and not value.lower().startswith("https://"):
-            raise ValueError("Webhook URL must use HTTPS")
-        return value
+        if value is None:
+            return value
+        return _validate_https_url(value)
 
 
 class WebhookResponse(BaseModel):

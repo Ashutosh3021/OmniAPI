@@ -65,7 +65,17 @@ export default function WebhookDetailPage() {
     }
   };
 
-  if (loading) return <Spinner full label="Loading webhook" />;
+  if (loading) {
+    return (
+      <div className="max-w-2xl">
+        <PageHeader
+          title="Webhook"
+          description="Reading this subscription from the gateway."
+        />
+        <Spinner label="Loading webhook" />
+      </div>
+    );
+  }
 
   if (notFound || !webhook) {
     return (

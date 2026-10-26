@@ -8,8 +8,6 @@ from app.services.cache_service import CacheService
 
 @contextmanager
 def _orchestrate_mocks(weather_payload: dict, news_payload: dict):
-    from unittest.mock import AsyncMock
-
     from app.external_apis.news_api import NewsAPIClient
     from app.external_apis.stock_api import StockAPIClient
     from app.external_apis.weather_api import WeatherAPIClient
@@ -48,24 +46,12 @@ def _orchestrate_mocks(weather_payload: dict, news_payload: dict):
 
 def test_full_happy_path(
     client,
+    make_auth_headers,
     mock_weather_response: dict,
     mock_news_response: dict,
 ) -> None:
-    register = client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "flow@example.com",
-            "password": "securepass123",
-            "full_name": "Flow User",
-        },
-    )
-    assert register.status_code == 201
-
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "flow@example.com", "password": "securepass123"},
-    )
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    # Sign-in goes through an OAuth provider, which this test does not call.
+    headers, _ = make_auth_headers("flow@example.com")
 
     key_resp = client.post(
         "/api/v1/api-keys",

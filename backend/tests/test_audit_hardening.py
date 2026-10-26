@@ -2,38 +2,22 @@
 
 import hashlib
 import hmac
-import json
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import httpx
-import pytest
-from sqlalchemy import select
 
-from app.models.api_key import APIKey
-from app.models.external_service import ExternalService
-from app.models.usage_log import UsageLog
-from app.models.user import User, UserTier
-from app.models.webhook import Webhook
-from app.services import api_key_service, auth_service
+from app.services import api_key_service
 from app.tasks.webhook_tasks import _delivery_headers, _serialize_payload, dispatch_webhook
 from app.utils import encryption
 
 
-def test_refresh_token_rejected_on_protected_route(client) -> None:
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "refresh@example.com",
-            "password": "securepass123",
-            "full_name": "Refresh User",
-        },
-    )
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "refresh@example.com", "password": "securepass123"},
-    )
-    refresh = login.json()["refresh_token"]
+def test_refresh_token_rejected_on_protected_route(client, db, make_auth_headers) -> None:
+    from app.services import session_service
+
+    headers, user = make_auth_headers("refresh@example.com")
+    refresh = session_service.issue_refresh_token(db, user)
+
     response = client.get(
         "/api/v1/api-keys",
         headers={"Authorization": f"Bearer {refresh}"},
@@ -41,7 +25,7 @@ def test_refresh_token_rejected_on_protected_route(client) -> None:
     assert response.status_code == 401
 
 
-def test_expired_api_key_rejected(client, auth_headers, db_session) -> None:
+def test_expired_api_key_rejected(client, auth_headers, db) -> None:
     create = client.post(
         "/api/v1/api-keys",
         headers=auth_headers,
@@ -49,9 +33,12 @@ def test_expired_api_key_rejected(client, auth_headers, db_session) -> None:
     )
     raw_key = create.json()["raw_key"]
     key_hash = api_key_service.hash_api_key(raw_key)
-    api_key = db_session.scalar(select(APIKey).where(APIKey.key_hash == key_hash))
-    api_key.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
-    db_session.commit()
+    api_key = db.api_keys.find_active_by_hash(key_hash)[0]
+    db.api_keys.update(
+        api_key.id,
+        expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        updated_at=datetime.now(timezone.utc),
+    )
 
     response = client.post(
         "/api/v1/orchestrate",
@@ -88,26 +75,24 @@ def test_webhook_create_returns_signing_secret_once(client, auth_headers) -> Non
     assert "secret" not in listing.json()[0]
 
 
-def test_webhook_delivery_includes_hmac_signature(db_session) -> None:
-    user = User(
+def test_webhook_delivery_includes_hmac_signature(db) -> None:
+    from datetime import datetime, timezone
+
+    user = db.users.create(
         email="sig@example.com",
-        password_hash="hash",
-        tier=UserTier.FREE,
-        is_active=True,
+        first_name="Sig",
+        last_name="User",
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(user)
-    db_session.commit()
 
     secret = "a" * 64
-    webhook = Webhook(
+    webhook = db.webhooks.create(
         user_id=user.id,
         url="https://example.com/hook",
         event_type="orchestrate.complete",
         secret_encrypted=encryption.encrypt(secret),
-        is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(webhook)
-    db_session.commit()
 
     payload = {"event_type": "orchestrate.complete", "data": {"ok": True}}
     body = _serialize_payload(payload)
@@ -116,28 +101,21 @@ def test_webhook_delivery_includes_hmac_signature(db_session) -> None:
     assert headers["X-OmniAPI-Signature"] == f"sha256={expected}"
 
 
-def test_dispatch_records_null_status_on_connect_error(db_session) -> None:
-    from app.models.webhook_event import WebhookEvent
-
-    user = User(
+def test_dispatch_records_null_status_on_connect_error(db) -> None:
+    user = db.users.create(
         email="conn@example.com",
-        password_hash="hash",
-        tier=UserTier.FREE,
-        is_active=True,
+        first_name="Conn",
+        last_name="User",
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(user)
-    db_session.commit()
 
-    webhook = Webhook(
+    webhook = db.webhooks.create(
         user_id=user.id,
         url="https://example.com/hook",
         event_type="orchestrate.complete",
         secret_encrypted=encryption.encrypt("b" * 64),
-        is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(webhook)
-    db_session.commit()
-    db_session.refresh(webhook)
 
     payload = {
         "event_id": "evt-1",
@@ -149,53 +127,52 @@ def test_dispatch_records_null_status_on_connect_error(db_session) -> None:
 
     original_max_retries = dispatch_webhook.max_retries
     dispatch_webhook.max_retries = 0
-    db_session.close = MagicMock()
     try:
         with (
-            patch("app.tasks.webhook_tasks.SessionLocal", return_value=db_session),
+            patch("app.tasks.webhook_tasks.get_database", return_value=db),
             patch("app.tasks.webhook_tasks.httpx.Client") as mock_client,
         ):
-            mock_client.return_value.__enter__.return_value.post.side_effect = (
-                httpx.ConnectError("connection refused")
+            mock_client.return_value.__enter__.return_value.post.side_effect = httpx.ConnectError(
+                "connection refused"
             )
             result = dispatch_webhook.run(str(webhook.id), payload)
     finally:
         dispatch_webhook.max_retries = original_max_retries
 
     assert result["success"] is False
-    events = db_session.scalars(
-        select(WebhookEvent).where(WebhookEvent.webhook_id == webhook.id)
-    ).all()
+    events = db.webhook_events.list_recent_for_webhook(webhook.id)
     assert len(events) == 1
     assert events[0].http_status_code is None
 
 
-def test_usage_log_service_id_nullable_after_service_delete(db_session, test_user) -> None:
-    service = ExternalService(
+def test_usage_log_service_id_nullable_after_service_delete(db, test_user) -> None:
+    from datetime import datetime, timezone
+
+    service = db.external_services.create(
         user_id=test_user.id,
         service_name="weather",
         api_key_encrypted=encryption.encrypt("test-key"),
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(service)
-    db_session.commit()
-    db_session.refresh(service)
 
-    log = UsageLog(
-        user_id=test_user.id,
-        service_id=service.id,
-        endpoint="/orchestrate/weather",
-        response_time_ms=100,
-        status_code=200,
-        cache_hit=False,
+    db.usage_logs.insert_many(
+        [
+            {
+                "user_id": test_user.id,
+                "service_id": service.id,
+                "endpoint": "/orchestrate/weather",
+                "response_time_ms": 100,
+                "status_code": 200,
+                "cache_hit": False,
+                "created_at": datetime.now(timezone.utc),
+            }
+        ]
     )
-    db_session.add(log)
-    db_session.commit()
 
-    db_session.delete(service)
-    db_session.commit()
-    db_session.refresh(log)
+    db.external_services.delete(service.id)
 
-    assert log.service_id is None
+    rows = db.client.execute("SELECT service_id FROM usage_logs WHERE user_id = " f"{test_user.id}")
+    assert rows[0].rows[0][0] is None
 
 
 def test_client_registry_matches_task_registry() -> None:

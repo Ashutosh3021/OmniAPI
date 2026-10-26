@@ -2,13 +2,13 @@
 
 import csv
 import io
+from datetime import datetime
 from typing import Iterator
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.database import Database, get_db
 from app.middleware.tenant_middleware import get_tenant_id
 from app.models.user import User
 from app.schemas.analytics import AnalyticsResponse, AnalyticsSummaryResponse
@@ -21,21 +21,23 @@ router = APIRouter()
 def _csv_row_generator(service: AnalyticsService) -> Iterator[str]:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(
-        ["timestamp", "service", "response_time_ms", "cache_hit", "status_code"]
-    )
+    writer.writerow(["timestamp", "service", "response_time_ms", "cache_hit", "status_code"])
     yield buffer.getvalue()
     buffer.seek(0)
     buffer.truncate(0)
 
     for row in service.iter_usage_rows(days=30):
+        created_at = row.get("created_at")
+        timestamp = (
+            created_at.isoformat() if isinstance(created_at, datetime) else (created_at or "")
+        )
         writer.writerow(
             [
-                row.created_at.isoformat(),
-                row.service_name,
-                row.response_time_ms,
-                row.cache_hit,
-                row.status_code,
+                timestamp,
+                row.get("service_name"),
+                row.get("response_time_ms"),
+                row.get("cache_hit"),
+                row.get("status_code"),
             ]
         )
         yield buffer.getvalue()
@@ -45,7 +47,7 @@ def _csv_row_generator(service: AnalyticsService) -> Iterator[str]:
 
 @router.get("/summary", response_model=AnalyticsSummaryResponse)
 def get_analytics_summary(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> AnalyticsSummaryResponse:
@@ -57,7 +59,7 @@ def get_analytics_summary(
 @router.get("/usage", response_model=AnalyticsResponse)
 def get_usage_analytics(
     period: str = Query(default="last_24h", pattern="^(last_24h|last_7d|last_30d)$"),
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> AnalyticsResponse:
@@ -67,7 +69,7 @@ def get_usage_analytics(
 
 @router.get("/reports")
 def download_usage_report(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> StreamingResponse:

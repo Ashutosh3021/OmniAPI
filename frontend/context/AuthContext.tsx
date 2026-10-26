@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { api } from "@/lib/api";
-import { TOKEN_STORAGE_KEY } from "@/lib/constants";
+import { API_BASE, REFRESH_STORAGE_KEY, TOKEN_STORAGE_KEY } from "@/lib/constants";
 import {
   clearAuth,
   getStoredRefreshToken,
@@ -19,20 +19,19 @@ import {
   storeAuth,
 } from "@/lib/auth";
 import type { AuthTokens, User } from "@/types";
-import type { LoginInput, SignupInput } from "@/lib/validators";
 
 // ---------------------------------------------------------------------------
 // Backend response shapes (snake_case from FastAPI)
 // ---------------------------------------------------------------------------
 
-/** Returned by POST /auth/login and POST /auth/refresh */
+/** Returned by POST /auth/oauth/exchange and POST /auth/refresh */
 interface BackendToken {
   access_token: string;
   refresh_token: string;
   token_type: string;
 }
 
-/** Returned by GET /auth/me and POST /auth/register */
+/** Returned by GET /auth/me */
 interface BackendUser {
   user_id: number;
   email: string;
@@ -66,6 +65,32 @@ function mapUser(raw: BackendUser): User {
   };
 }
 
+async function swapCodeForTokens(code: string): Promise<BackendToken | null> {
+  // Raw fetch on purpose: a 401 here means the one-time code expired, which is
+  // not a session problem, so it must not trigger the refresh interceptor.
+  const response = await fetch(`${API_BASE}/auth/oauth/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+
+  if (!response.ok) return null;
+  return (await response.json()) as BackendToken;
+}
+
+async function revokeSession(refreshToken: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      keepalive: true,
+    });
+  } catch {
+    // The local session is cleared either way; the token expires on its own.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -74,8 +99,8 @@ interface AuthContextValue {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (data: LoginInput) => Promise<boolean>;
-  signup: (data: Omit<SignupInput, "confirmPassword">) => Promise<boolean>;
+  /** Trade the one-time code from the OAuth redirect for a token pair. */
+  completeSignIn: (code: string) => Promise<boolean>;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
 }
@@ -98,51 +123,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = useCallback(
-    async (data: LoginInput): Promise<boolean> => {
-      try {
-        // 1. Obtain token pair — backend returns { access_token, refresh_token }
-        const tokenRes = await api.post<BackendToken>("/auth/login", data);
-        const tokens = mapTokens(tokenRes);
+  // A request that could not be refreshed announces it once. The provider
+  // clears the session and navigates without a full document reload.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      clearAuth();
+      setUser(null);
+      router.replace("/login");
+    };
+    window.addEventListener("omniapi:unauthorized", onUnauthorized);
+    return () =>
+      window.removeEventListener("omniapi:unauthorized", onUnauthorized);
+  }, [router]);
 
-        // 2. Temporarily store the access token so the next request is authenticated
-        localStorage.setItem(TOKEN_STORAGE_KEY, tokens.accessToken);
+  const completeSignIn = useCallback(async (code: string): Promise<boolean> => {
+    const tokenRes = await swapCodeForTokens(code);
+    if (!tokenRes) return false;
 
-        // 3. Fetch the user profile
-        const userRes = await api.get<BackendUser>("/auth/me");
-        const mappedUser = mapUser(userRes);
+    const tokens = mapTokens(tokenRes);
 
-        // 4. Persist both and update state
-        storeAuth(tokens, mappedUser);
-        setUser(mappedUser);
-        router.push("/dashboard");
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [router]
-  );
+    // Store the pair before asking who the token belongs to.
+    localStorage.setItem(TOKEN_STORAGE_KEY, tokens.accessToken);
+    localStorage.setItem(REFRESH_STORAGE_KEY, tokens.refreshToken);
 
-  const signup = useCallback(
-    async (data: Omit<SignupInput, "confirmPassword">): Promise<boolean> => {
-      try {
-        // Backend route is POST /auth/register (not /auth/signup).
-        // It returns a UserResponse (no tokens), so we register then log in.
-        await api.post<BackendUser>("/auth/register", {
-          full_name: data.name,
-          email: data.email,
-          password: data.password,
-        });
-        return await login({ email: data.email, password: data.password });
-      } catch {
-        return false;
-      }
-    },
-    [login]
-  );
+    try {
+      const userRes = await api.get<BackendUser>("/auth/me");
+      const mappedUser = mapUser(userRes);
+      storeAuth(tokens, mappedUser);
+      setUser(mappedUser);
+      return true;
+    } catch {
+      clearAuth();
+      return false;
+    }
+  }, []);
 
   const logout = useCallback(() => {
+    const refreshToken = getStoredRefreshToken();
+    if (refreshToken) {
+      void revokeSession(refreshToken);
+    }
     clearAuth();
     setUser(null);
     router.push("/login");
@@ -156,16 +176,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         return false;
       }
-      const tokenRes = await api.post<BackendToken>("/auth/refresh", {
-        refresh_token: current,
-      });
-      const tokens = mapTokens(tokenRes);
 
-      // Re-fetch user profile with the new token
+      // Rotation is enforced: the old refresh token is revoked, so both
+      // tokens in the response replace whatever is stored.
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: current }),
+      });
+      if (!response.ok) {
+        clearAuth();
+        setUser(null);
+        return false;
+      }
+
+      const tokens = mapTokens((await response.json()) as BackendToken);
       localStorage.setItem(TOKEN_STORAGE_KEY, tokens.accessToken);
+      localStorage.setItem(REFRESH_STORAGE_KEY, tokens.refreshToken);
+
       const userRes = await api.get<BackendUser>("/auth/me");
       const mappedUser = mapUser(userRes);
-
       storeAuth(tokens, mappedUser);
       setUser(mappedUser);
       return true;
@@ -181,12 +211,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       isAuthenticated: !!user,
       isLoading,
-      login,
-      signup,
+      completeSignIn,
       logout,
       refreshToken,
     }),
-    [user, isLoading, login, signup, logout, refreshToken]
+    [user, isLoading, completeSignIn, logout, refreshToken]
   );
 
   return (

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-2.5", className)}>
+    <span className={cn("wordmark inline-flex items-center gap-2.5", className)}>
       <svg
         width="18"
         height="18"
@@ -29,7 +29,7 @@ export function Wordmark({ className }: { className?: string }) {
           strokeLinecap="round"
           opacity="0.55"
         />
-        <circle cx="3" cy="9" r="2.1" fill="var(--c-accent)" />
+        <circle cx="3" cy="9" r="2.1" fill="var(--c-accent)" className="wordmark__dot" />
       </svg>
       <span className="text-[1.0625rem] font-bold leading-none tracking-[-0.025em] [font-variation-settings:'wdth'_110]">
         OmniAPI

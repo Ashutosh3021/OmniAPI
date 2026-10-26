@@ -1,14 +1,16 @@
 """Usage analytics computed from UsageLog aggregates."""
 
 from datetime import datetime, timedelta, timezone
+from typing import Any, Iterator
 
-from sqlalchemy import case, func, select
-from sqlalchemy.orm import Session
-
-from app.models.external_service import ExternalService
-from app.models.usage_log import UsageLog
+from app.db.database import Database
 from app.models.user import User
-from app.schemas.analytics import AnalyticsSummaryResponse, AnalyticsResponse, ServiceBreakdown, UsageMetrics
+from app.schemas.analytics import (
+    AnalyticsResponse,
+    AnalyticsSummaryResponse,
+    ServiceBreakdown,
+    UsageMetrics,
+)
 
 # Proxy cost per millisecond of upstream compute avoided by cache hits.
 # Formula: estimated_cost_saved = cache_hits * avg_upstream_response_time_ms * COST_PER_UPSTREAM_MS_USD
@@ -19,7 +21,7 @@ VALID_PERIODS = {"last_24h", "last_7d", "last_30d"}
 class AnalyticsService:
     """Tenant-scoped analytics from UsageLog rows."""
 
-    def __init__(self, db: Session, user: User) -> None:
+    def __init__(self, db: Database, user: User) -> None:
         self.db = db
         self.user = user
 
@@ -33,22 +35,26 @@ class AnalyticsService:
         today_start = now - timedelta(hours=24)
         yesterday_start = today_start - timedelta(hours=24)
 
-        today_metrics = self._aggregate_metrics(today_start)
-        yesterday_metrics = self._aggregate_metrics(yesterday_start)
+        metrics = self.db.usage_logs.metrics_for(
+            self.user.id,
+            since=yesterday_start,
+            today_start=today_start,
+            yesterday_start=yesterday_start,
+        )
 
-        calls_today = today_metrics.total_calls
-        calls_yesterday = yesterday_metrics.total_calls
+        calls_today = metrics.calls_today
+        calls_yesterday = metrics.calls_yesterday
         calls_change = (
             round((calls_today - calls_yesterday) / calls_yesterday * 100, 1)
             if calls_yesterday
             else 0.0
         )
 
-        avg_today = today_metrics.avg_response_time_ms
-        avg_yesterday = yesterday_metrics.avg_response_time_ms
+        avg_today = metrics.avg_response_time_ms_today
+        avg_yesterday = metrics.avg_response_time_ms_yesterday
         response_change_ms = round(avg_today - avg_yesterday, 1)
 
-        cache_hit_percent = round(today_metrics.cache_hit_rate * 100, 1)
+        cache_hit_percent = round(metrics.cache_hit_rate * 100, 1)
 
         return AnalyticsSummaryResponse(
             calls_today=calls_today,
@@ -75,37 +81,18 @@ class AnalyticsService:
             generated_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    def iter_usage_rows(self, days: int = 30):
+    def iter_usage_rows(self, days: int = 30) -> Iterator[dict[str, Any]]:
         """Yield UsageLog rows with service names for CSV export."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        stmt = (
-            select(
-                UsageLog.created_at,
-                ExternalService.service_name,
-                UsageLog.response_time_ms,
-                UsageLog.cache_hit,
-                UsageLog.status_code,
-            )
-            .outerjoin(ExternalService, UsageLog.service_id == ExternalService.id)
-            .where(
-                UsageLog.user_id == self.user.id,
-                UsageLog.created_at >= cutoff,
-            )
-            .order_by(UsageLog.created_at.desc())
-        )
-        for row in self.db.execute(stmt).yield_per(500):
-            service_name = row.service_name if row.service_name is not None else "deleted"
-            yield type(
-                "UsageRow",
-                (),
-                {
-                    "created_at": row.created_at,
-                    "service_name": service_name,
-                    "response_time_ms": row.response_time_ms,
-                    "cache_hit": row.cache_hit,
-                    "status_code": row.status_code,
-                },
-            )()
+        for row in self.db.usage_logs.iter_rows_with_service(self.user.id, cutoff):
+            service_name = row.get("service_name") or "deleted"
+            yield {
+                "created_at": row.get("created_at"),
+                "service_name": service_name,
+                "response_time_ms": row.get("response_time_ms"),
+                "cache_hit": bool(row.get("cache_hit")),
+                "status_code": row.get("status_code"),
+            }
 
     def _period_to_timedelta(self, period: str) -> timedelta:
         mapping = {
@@ -116,25 +103,22 @@ class AnalyticsService:
         return mapping.get(period, timedelta(hours=24))
 
     def _aggregate_metrics(self, cutoff: datetime) -> UsageMetrics:
-        stmt = select(
-            func.count(UsageLog.id).label("total"),
-            func.sum(case((UsageLog.status_code < 400, 1), else_=0)).label("success"),
-            func.sum(case((UsageLog.status_code >= 400, 1), else_=0)).label("failed"),
-            func.sum(case((UsageLog.cache_hit.is_(True), 1), else_=0)).label("cache_hits"),
-            func.avg(UsageLog.response_time_ms).label("avg_ms"),
-        ).where(
-            UsageLog.user_id == self.user.id,
-            UsageLog.created_at >= cutoff,
+        now = datetime.now(timezone.utc)
+        metrics = self.db.usage_logs.metrics_for(
+            self.user.id,
+            since=cutoff,
+            today_start=now,
+            yesterday_start=now,
         )
-        row = self.db.execute(stmt).one()
-        total = int(row.total or 0)
-        cache_hits = int(row.cache_hits or 0)
-        avg_ms = float(row.avg_ms or 0.0)
+
+        total = metrics.total
+        cache_hits = metrics.cache_hits
+        avg_ms = metrics.avg_response_time_ms
 
         return UsageMetrics(
             total_calls=total,
-            successful_calls=int(row.success or 0),
-            failed_calls=int(row.failed or 0),
+            successful_calls=metrics.successful,
+            failed_calls=metrics.failed,
             cache_hits=cache_hits,
             cache_hit_rate=(cache_hits / total) if total else 0.0,
             avg_response_time_ms=avg_ms,
@@ -142,34 +126,14 @@ class AnalyticsService:
         )
 
     def _service_breakdown(self, cutoff: datetime) -> list[ServiceBreakdown]:
-        stmt = (
-            select(
-                ExternalService.service_name,
-                func.count(UsageLog.id).label("call_count"),
-                func.sum(case((UsageLog.cache_hit.is_(True), 1), else_=0)).label(
-                    "cache_hits"
-                ),
-                func.avg(UsageLog.response_time_ms).label("avg_ms"),
-                func.sum(case((UsageLog.status_code >= 400, 1), else_=0)).label(
-                    "error_count"
-                ),
-            )
-            .join(ExternalService, UsageLog.service_id == ExternalService.id)
-            .where(
-                UsageLog.user_id == self.user.id,
-                UsageLog.created_at >= cutoff,
-            )
-            .group_by(ExternalService.service_name)
-            .order_by(func.count(UsageLog.id).desc())
-        )
-        rows = self.db.execute(stmt).all()
+        rows = self.db.usage_logs.breakdown_by_service(self.user.id, cutoff)
         return [
             ServiceBreakdown(
-                service_name=row.service_name,
-                call_count=int(row.call_count or 0),
-                cache_hits=int(row.cache_hits or 0),
-                avg_response_time_ms=float(row.avg_ms or 0.0),
-                error_count=int(row.error_count or 0),
+                service_name=row.get("service_name") or "deleted",
+                call_count=int(row.get("call_count") or 0),
+                cache_hits=int(row.get("cache_hits") or 0),
+                avg_response_time_ms=float(row.get("avg_ms") or 0.0),
+                error_count=int(row.get("error_count") or 0),
             )
             for row in rows
         ]

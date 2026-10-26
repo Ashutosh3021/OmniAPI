@@ -16,11 +16,11 @@ from typing import Any, Type
 
 from celery.exceptions import MaxRetriesExceededError
 
+from app.db.database import get_database
 from app.external_apis.base import BaseAPIClient
 from app.external_apis.news_api import NewsAPIClient
 from app.external_apis.stock_api import StockAPIClient
 from app.external_apis.weather_api import WeatherAPIClient
-from app.services.service_catalog import SERVICE_CATALOG
 from app.tasks.celery_app import celery_app
 from app.utils.exceptions import ExternalAPIError
 
@@ -52,24 +52,18 @@ def _execute_task(
     params: dict,
 ) -> dict[str, Any]:
     """Load the stored credential, call the provider, and normalise the result."""
-    from app.db.session import SessionLocal
-    from app.models.external_service import ExternalService
-
     client_cls = CLIENT_CLASSES[service_name]
-    db = SessionLocal()
-    try:
-        service = db.get(ExternalService, service_id)
-        if service is None:
-            return {
-                "success": False,
-                "service": service_name,
-                "data": None,
-                "fetched_at": None,
-                "error": f"External service {service_id} not found",
-            }
-        encrypted_key = service.api_key_encrypted
-    finally:
-        db.close()
+    db = get_database()
+    service = db.external_services.get_by_id(service_id)
+    if service is None:
+        return {
+            "success": False,
+            "service": service_name,
+            "data": None,
+            "fetched_at": None,
+            "error": f"External service {service_id} not found",
+        }
+    encrypted_key = service.api_key_encrypted
 
     try:
         payload = _run_fetch(client_cls, encrypted_key, params)

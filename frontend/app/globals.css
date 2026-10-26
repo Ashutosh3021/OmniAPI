@@ -40,7 +40,7 @@
   --c-scrim: rgb(var(--rgb-ink) / 0.44);
 
   /* Fluid type scale (min @ 375px, max @ 1440px) */
-  --t-display: clamp(2.75rem, 1.05rem + 5.6vw, 6rem);
+  --t-display: clamp(2.75rem, 1.05rem + 5.2vw, 5.5rem);
   --t-title: clamp(1.875rem, 1.32rem + 2.6vw, 3.25rem);
   --t-heading: clamp(1.3125rem, 1.09rem + 1.05vw, 1.875rem);
   --t-subhead: clamp(1.0625rem, 0.99rem + 0.35vw, 1.25rem);
@@ -261,6 +261,7 @@
   }
   .link:hover {
     text-decoration-color: var(--c-accent);
+    box-shadow: 0 1px 0 var(--c-accent);
   }
 
   /* ── Buttons: one treatment per role, from the motion verb ─────────── */
@@ -352,6 +353,119 @@
     transform: translateY(0);
   }
 
+  /* Inverted: the light fill on a dark field floods with the signal colour. */
+  .btn-invert {
+    background: var(--c-ground);
+    color: var(--c-ink);
+  }  .btn-invert::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--c-accent);
+    transform: scaleY(0);
+    transform-origin: bottom center;
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .btn-invert:hover::before {
+    transform: scaleY(1);
+  }
+  .btn-invert:hover {
+    color: var(--c-ground);
+  }
+  .btn-invert:hover .btn__label {
+    transform: translateY(-101%);
+  }
+  .btn-invert:hover .btn__ghost {
+    transform: translateY(0);
+  }
+
+  /* A quiet secondary on a dark field: a wash floods in from the left edge. */
+  .btn-ghost-invert {
+    border: 1px solid rgb(var(--rgb-ground) / 0.32);
+    color: var(--c-ground);
+  }
+  .btn-ghost-invert::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: rgb(var(--rgb-ground) / 0.1);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .btn-ghost-invert:hover::before {
+    transform: scaleX(1);
+  }
+  .btn-ghost-invert:hover {
+    border-color: rgb(var(--rgb-ground) / 0.62);
+  }
+
+  /* Top navigation: the underline draws under the word. */
+  .nav-link {
+    position: relative;
+  }
+  .nav-link::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .nav-link:hover::after {
+    transform: scaleX(1);
+  }
+
+  /* The wordmark: the origin dot answers the pointer. */
+  .wordmark__dot {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .wordmark:hover .wordmark__dot {
+    transform: scale(1.45);
+  }
+
+  /* Utility controls answer with movement, not only colour. */
+  .copy-btn svg {
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .copy-btn:hover svg {
+    transform: scale(1.14);
+  }
+
+  /* The live rail: a soft signal travelling down the spine. */
+  .rail-glow {
+    position: absolute;
+    left: -7px;
+    top: 0;
+    width: 14px;
+    height: 180px;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgb(var(--rgb-accent) / 0.34) 50%,
+      transparent 100%
+    );
+  }
+
+  /* Tap targets: 24px minimum, without changing the type size. */
+  .tap {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+  }
+  .tap-inline {
+    padding-block: 4px;
+  }
+
   /* ── Status lamps: shape, not radius ───────────────────────────────── */
 
   .lamp {
@@ -418,6 +532,9 @@
   .tick:hover > .tick__label,
   .tick[aria-current="page"] > .tick__label {
     transform: translateX(4px);
+  }
+  .tick[aria-current="page"]:hover > .tick__label {
+    transform: translateX(6px);
   }
 
   /* ── Index rows: a rule draws in from the spine ─────────────────────── */
@@ -612,6 +729,13 @@
   .fan-branch--idle {
     stroke: var(--c-line-strong);
   }
+  .fan-flow {
+    fill: none;
+    stroke: var(--c-accent);
+    stroke-width: 8;
+    stroke-linecap: round;
+    opacity: 0.16;
+  }
   .fan-packet {
     fill: var(--c-accent);
   }
@@ -644,21 +768,19 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* A scoped dark field for panels that need their own palette. */
+  /* A scoped dark field for panels that need their own palette. The raw
+     triplets are overridden, not the semantic names, because the Tailwind
+     utilities read the triplets directly. */
   .ink-panel {
-    --c-ground: #0c0e12;
-    --c-surface: #14171d;
-    --c-raised: #1c2028;
-    --c-ink: #e9ecef;
-    --c-muted: #9aa3ae;
-    --c-accent: #4c7dff;
-    --c-ok: #4fbf85;
-    --c-warn: #e0a83c;
-    --c-bad: #ff6b5e;
-    --c-line: rgb(233 236 239 / 0.14);
-    --c-line-strong: rgb(233 236 239 / 0.26);
-    --c-accent-soft: rgb(76 125 255 / 0.14);
-    --c-ink-soft: rgb(233 236 239 / 0.08);
+    --rgb-ground: 12 14 18;
+    --rgb-surface: 20 23 29;
+    --rgb-raised: 28 32 40;
+    --rgb-ink: 233 236 239;
+    --rgb-muted: 154 163 174;
+    --rgb-accent: 76 125 255;
+    --rgb-ok: 79 191 133;
+    --rgb-warn: 224 168 60;
+    --rgb-bad: 255 107 94;
     background: #0c0e12;
     color: #e9ecef;
   }

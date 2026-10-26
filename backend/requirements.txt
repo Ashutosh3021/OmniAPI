@@ -4,23 +4,19 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
-# Database & ORM
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.13.1
-
 # Caching & Async
 redis[hiredis]==5.0.1
 # Plain celery (not celery[redis]): the [redis] extra pins redis<5, which conflicts with redis 5.x above
 celery==5.3.4
 
+# HTTP — runtime, not dev-only: the data store, the OAuth providers, the
+# outbound webhooks and the external APIs are all reached over httpx.
+httpx==0.25.2
+
 # Utilities
 python-dotenv==1.0.0
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
 email-validator==2.1.0
-python-multipart==0.0.6
 cryptography==41.0.7
 
 # Development & Testing
@@ -30,7 +26,6 @@ pytest-cov==4.1.0
 pytest-mock==3.12.0
 pytest-httpx==0.25.0
 fakeredis[lua]==2.21.1
-httpx==0.25.2
 
 # Code Quality
 black==23.12.0

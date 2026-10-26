@@ -1,55 +1,56 @@
 """API usage log for analytics and billing."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
-
-if TYPE_CHECKING:
-    from app.models.external_service import ExternalService
-    from app.models.user import User
+from app.models.parsing import parse_bool, parse_datetime
 
 
-class UsageLog(Base):
+@dataclass
+class UsageLog:
     """Record of a single orchestrated API call."""
 
-    __tablename__ = "usage_logs"
-    __table_args__ = (Index("ix_usage_logs_user_id_created_at", "user_id", "created_at"),)
+    id: int
+    user_id: int
+    endpoint: str
+    response_time_ms: int
+    status_code: int
+    cache_hit: bool
+    created_at: datetime
+    service_id: int | None = None
+    api_key_id: int | None = None
+    request_size_bytes: int | None = None
+    response_size_bytes: int | None = None
+    error_message: str | None = None
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    service_id: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        ForeignKey("external_services.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    api_key_id: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        ForeignKey("api_keys.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
-    response_time_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    status_code: Mapped[int] = mapped_column(Integer, nullable=False, server_default="200")
-    cache_hit: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    request_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    response_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
-    )
-    error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-
-    user: Mapped["User"] = relationship("User", back_populates="usage_logs")
-    service: Mapped[Optional["ExternalService"]] = relationship(
-        "ExternalService", back_populates="usage_logs"
-    )
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "UsageLog":
+        """Build a usage log from a database row."""
+        return cls(
+            id=int(row["id"]),
+            user_id=int(row["user_id"]),
+            endpoint=row["endpoint"],
+            response_time_ms=int(row["response_time_ms"]),
+            status_code=int(row["status_code"]),
+            cache_hit=parse_bool(row.get("cache_hit")),
+            created_at=parse_datetime(row["created_at"]),  # type: ignore[arg-type]
+            service_id=int(row["service_id"]) if row.get("service_id") is not None else None,
+            api_key_id=int(row["api_key_id"]) if row.get("api_key_id") is not None else None,
+            request_size_bytes=(
+                int(row["request_size_bytes"])
+                if row.get("request_size_bytes") is not None
+                else None
+            ),
+            response_size_bytes=(
+                int(row["response_size_bytes"])
+                if row.get("response_size_bytes") is not None
+                else None
+            ),
+            error_message=row.get("error_message"),
+        )
 
     def __repr__(self) -> str:
         return (

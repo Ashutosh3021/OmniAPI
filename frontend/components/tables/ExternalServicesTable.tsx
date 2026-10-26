@@ -41,7 +41,7 @@ export function ExternalServicesTable({
             <div className="min-w-0">
               <Link
                 href={`/external-services/${svc.service_id}`}
-                className="t-subhead block truncate font-mono text-ink transition-colors hover:text-accent"
+                className="t-subhead block truncate font-mono text-ink transition-colors hover:text-accent hover:translate-x-0.5 transition-transform"
               >
                 {svc.service_name}
               </Link>
@@ -70,7 +70,7 @@ export function ExternalServicesTable({
               <button
                 type="button"
                 onClick={() => onDelete(svc.service_id)}
-                className="inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-meta text-muted transition-colors hover:text-bad"
+                className="inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-meta text-muted transition-all hover:text-bad hover:scale-110"
                 aria-label={`Remove ${svc.service_name}`}
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden />

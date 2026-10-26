@@ -2,9 +2,7 @@
 
 from uuid import uuid4
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
+from app.db.database import Database
 from app.models.webhook import Webhook
 from app.schemas.webhook import WebhookEventPayload
 from app.tasks.webhook_tasks import dispatch_webhook
@@ -13,18 +11,12 @@ from app.tasks.webhook_tasks import dispatch_webhook
 class WebhookService:
     """Manage webhooks and queue delivery tasks (fire-and-forget)."""
 
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Database) -> None:
         self.db = db
 
     def get_active_webhooks(self, tenant_id: str, event_type: str) -> list[Webhook]:
         """Fetch active webhooks for a tenant matching the event type."""
-        user_id = int(tenant_id)
-        stmt = select(Webhook).where(
-            Webhook.user_id == user_id,
-            Webhook.event_type == event_type,
-            Webhook.is_active.is_(True),
-        )
-        return list(self.db.scalars(stmt).all())
+        return self.db.webhooks.list_active_for_event(int(tenant_id), event_type)
 
     def dispatch_event(self, tenant_id: str, event_type: str, data: dict) -> None:
         """

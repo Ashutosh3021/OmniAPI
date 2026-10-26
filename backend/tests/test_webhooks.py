@@ -1,31 +1,31 @@
 """Webhook management and delivery tests."""
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import select
 
-from app.models.user import User, UserTier
-from app.models.webhook import Webhook
-from app.models.webhook_event import WebhookEvent, WebhookEventStatus
 from app.tasks.webhook_tasks import dispatch_webhook
 
 
 @pytest.fixture
-def auth_headers(client):
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "webhook@example.com",
-            "password": "securepass123",
-            "full_name": "Webhook User",
-        },
+def webhook_user(db):
+    """The account the webhook tests use."""
+    return db.users.create(
+        email="webhook@example.com",
+        first_name="Webhook",
+        last_name="User",
+        created_at=datetime.now(timezone.utc),
     )
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "webhook@example.com", "password": "securepass123"},
-    )
-    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+@pytest.fixture
+def auth_headers(webhook_user):
+    """Authorization headers for the webhook account."""
+    from app.services import auth_service
+
+    claims = auth_service.build_token_claims(webhook_user.id, webhook_user.email, webhook_user.tier)
+    return {"Authorization": f"Bearer {auth_service.create_access_token(claims)}"}
 
 
 def test_create_webhook_requires_https(client, auth_headers) -> None:
@@ -78,33 +78,21 @@ def test_webhook_test_endpoint_queues_delivery(client, auth_headers) -> None:
     mock_dispatch.delay.assert_called_once()
 
 
-def test_dispatch_webhook_success(db_session) -> None:
-    user = User(
-        email="wh-user@example.com",
-        password_hash="hash",
-        tier=UserTier.FREE,
-        is_active=True,
-    )
-    db_session.add(user)
-    db_session.commit()
-
+def test_dispatch_webhook_success(db, webhook_user) -> None:
     from app.utils import encryption
 
-    webhook = Webhook(
-        user_id=user.id,
+    webhook = db.webhooks.create(
+        user_id=webhook_user.id,
         url="https://example.com/hook",
         event_type="orchestrate.complete",
         secret_encrypted=encryption.encrypt("c" * 64),
-        is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(webhook)
-    db_session.commit()
-    db_session.refresh(webhook)
 
     payload = {
         "event_id": "evt-1",
         "event_type": "orchestrate.complete",
-        "tenant_id": str(user.id),
+        "tenant_id": str(webhook_user.id),
         "timestamp": "2026-01-01T00:00:00+00:00",
         "data": {"ok": True},
     }
@@ -112,56 +100,45 @@ def test_dispatch_webhook_success(db_session) -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
 
-    db_session.close = MagicMock()
     with (
-        patch("app.tasks.webhook_tasks.SessionLocal", return_value=db_session),
+        patch("app.tasks.webhook_tasks.get_database", return_value=db),
         patch("app.tasks.webhook_tasks.httpx.Client") as mock_client,
     ):
         mock_client.return_value.__enter__.return_value.post.return_value = mock_response
         result = dispatch_webhook.run(str(webhook.id), payload)
 
     assert result["success"] is True
-    events = db_session.scalars(
-        select(WebhookEvent).where(WebhookEvent.webhook_id == webhook.id)
-    ).all()
+    events = db.webhook_events.list_recent_for_webhook(webhook.id)
     assert len(events) == 1
-    assert events[0].status == WebhookEventStatus.DELIVERED
+    assert events[0].status == "delivered"
 
 
-def test_webhook_disabled_after_max_retries(db_session) -> None:
-    user = User(
-        email="wh-fail@example.com",
-        password_hash="hash",
-        tier=UserTier.FREE,
-        is_active=True,
-    )
-    db_session.add(user)
-    db_session.commit()
-
-    webhook = Webhook(
-        user_id=user.id,
+def test_webhook_disabled_after_max_retries(db, webhook_user) -> None:
+    webhook = db.webhooks.create(
+        user_id=webhook_user.id,
         url="https://example.com/hook-fail",
         event_type="orchestrate.failed",
-        is_active=True,
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(webhook)
-    db_session.commit()
-    db_session.refresh(webhook)
 
     for _ in range(5):
-        db_session.add(
-            WebhookEvent(
-                webhook_id=webhook.id,
-                user_id=user.id,
-                event_type="orchestrate.failed",
-                payload="{}",
-                status=WebhookEventStatus.FAILED,
-                attempt_count=5,
-            )
+        db.webhook_events.create(
+            webhook_id=webhook.id,
+            user_id=webhook_user.id,
+            event_type="orchestrate.failed",
+            payload="{}",
+            status="failed",
+            attempt_count=5,
+            created_at=datetime.now(timezone.utc),
         )
-    webhook.retry_count = 5
-    webhook.is_active = False
-    db_session.commit()
+    db.webhooks.record_attempt(
+        webhook.id,
+        retry_count=5,
+        consecutive_failures=5,
+        last_triggered_at=datetime.now(timezone.utc),
+        is_active=False,
+    )
 
-    db_session.refresh(webhook)
-    assert webhook.is_active is False
+    reloaded = db.webhooks.get_by_id(webhook.id)
+    assert reloaded is not None
+    assert reloaded.is_active is False

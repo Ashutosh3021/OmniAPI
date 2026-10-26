@@ -1,28 +1,21 @@
-"""Authentication: password hashing and JWT token management."""
+"""Authentication: JWT token management.
+
+There is no password here. Accounts are identified by a Google or GitHub
+identity, and the tokens below are what the application issues once such an
+identity has been verified.
+"""
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
 from jose import ExpiredSignatureError, JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import get_settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 settings = get_settings()
 
 TOKEN_TYPE_ACCESS = "access"
-
-
-def hash_password(plain: str) -> str:
-    """Hash a plaintext password with bcrypt."""
-    return pwd_context.hash(plain)
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a plaintext password against a bcrypt hash."""
-    return pwd_context.verify(plain, hashed)
 
 
 def _create_token(data: dict[str, Any], expires_delta: timedelta) -> str:

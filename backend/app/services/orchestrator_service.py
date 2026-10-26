@@ -8,22 +8,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.config import get_settings
+from app.db.database import Database
 from app.models.external_service import ExternalService, ExternalServiceStatus
-from app.models.usage_log import UsageLog
 from app.models.user import User
 from app.schemas.orchestrate import OrchestrateRequest, OrchestrateResponse, ServiceResult
 from app.services.cache_service import SERVICE_TTL, CacheService
 from app.services.provider_caller import call_provider
 from app.services.rate_limiter import RateLimiter
-from app.services.service_catalog import (
-    SERVICE_CATALOG,
-    ServiceDefinition,
-    supported_service_names,
-)
+from app.services.service_catalog import SERVICE_CATALOG, ServiceDefinition, supported_service_names
 from app.services.webhook_service import WebhookService
 from app.utils.exceptions import (
     RateLimitExceededError,
@@ -53,9 +46,16 @@ class _WorkItem:
 class OrchestratorService:
     """Parallel orchestration with Redis cache and in-process provider calls."""
 
-    def __init__(self, db: Session, user: User) -> None:
+    def __init__(
+        self,
+        db: Database,
+        user: User,
+        api_key_id: Optional[int] = None,
+    ) -> None:
         self.db = db
         self.user = user
+        self.api_key_id = api_key_id
+        self.usage_rows: list[dict[str, Any]] = []
         self.settings = get_settings()
 
     async def orchestrate(self, request: OrchestrateRequest) -> OrchestrateResponse:
@@ -74,7 +74,7 @@ class OrchestratorService:
         results = await self._collect_results(work_items, cache)
         total_time_ms = int((time.monotonic() - total_start) * 1000)
 
-        self._log_usage(external_services, results)
+        usage_rows = self._log_usage(external_services, results)
 
         request_id = str(uuid.uuid4())
         response = OrchestrateResponse(
@@ -104,6 +104,9 @@ class OrchestratorService:
             },
         )
 
+        # The usage rows are kept for the caller to write after the response
+        # has been sent.
+        self.usage_rows = usage_rows
         return response
 
     # ------------------------------------------------------------------
@@ -171,11 +174,8 @@ class OrchestratorService:
     # ------------------------------------------------------------------
 
     def _load_configured_services(self, service_names: list[str]) -> dict[str, ExternalService]:
-        stmt = select(ExternalService).where(
-            ExternalService.user_id == self.user.id,
-            ExternalService.service_name.in_(service_names),
-        )
-        records = {svc.service_name: svc for svc in self.db.scalars(stmt).all()}
+        services = self.db.external_services.list_for_user_named(self.user.id, service_names)
+        records = {svc.service_name: svc for svc in services}
 
         missing = [name for name in service_names if name not in records]
         if missing:
@@ -185,9 +185,7 @@ class OrchestratorService:
             )
 
         inactive = [
-            name
-            for name, svc in records.items()
-            if svc.status != ExternalServiceStatus.ACTIVE
+            name for name, svc in records.items() if svc.status != ExternalServiceStatus.ACTIVE
         ]
         if inactive:
             raise ServiceNotConfiguredError(
@@ -197,9 +195,7 @@ class OrchestratorService:
 
         return records
 
-    async def _enforce_service_quotas(
-        self, external_services: dict[str, ExternalService]
-    ) -> None:
+    async def _enforce_service_quotas(self, external_services: dict[str, ExternalService]) -> None:
         """Enforce each configured service's own calls-per-hour quota."""
         limiter = RateLimiter()
         for name, service in external_services.items():
@@ -329,37 +325,44 @@ class OrchestratorService:
         self,
         external_services: dict[str, ExternalService],
         results: list[ServiceResult],
-    ) -> None:
-        """Record one usage row per service call.
+    ) -> list[dict[str, Any]]:
+        """Build one usage row per service call.
 
-        The rows are flushed to the database by the caller (see
-        ``flush_usage``) so the response is not held up by the write.
+        The rows are written by the caller (see ``flush_usage``) so the
+        response is not held up by the write.
         """
+        now = datetime.now(timezone.utc)
+        rows: list[dict[str, Any]] = []
         for result in results:
             external_service = external_services.get(result.service)
             if external_service is None:
                 continue
-            error_message = result.error[:500] if result.error else None
-            self.db.add(
-                UsageLog(
-                    user_id=self.user.id,
-                    service_id=external_service.id,
-                    endpoint=f"{ORCHESTRATE_ENDPOINT}/{result.service}",
-                    response_time_ms=result.response_time_ms,
-                    status_code=200 if result.success else 500,
-                    cache_hit=result.cache_hit,
-                    error_message=error_message,
-                    created_at=datetime.now(timezone.utc),
-                )
+            rows.append(
+                {
+                    "user_id": self.user.id,
+                    "service_id": external_service.id,
+                    "api_key_id": self.api_key_id,
+                    "endpoint": f"{ORCHESTRATE_ENDPOINT}/{result.service}",
+                    "response_time_ms": result.response_time_ms,
+                    "status_code": 200 if result.success else 500,
+                    "cache_hit": result.cache_hit,
+                    "error_message": result.error[:500] if result.error else None,
+                    "created_at": now,
+                }
             )
+        return rows
 
-    def flush_usage(self) -> None:
-        """Commit the pending usage rows."""
+    def flush_usage(self, rows: list[dict[str, Any]]) -> None:
+        """Write the pending usage rows.
+
+        A failure to record usage must never fail an already-served request.
+        """
+        if not rows:
+            return
         try:
-            self.db.commit()
+            self.db.usage_logs.insert_many(rows)
         except Exception:  # noqa: BLE001 - never fail a served request
             logger.exception("Failed to record usage")
-            self.db.rollback()
 
 
 def json_bytes(value: Any) -> bytes:

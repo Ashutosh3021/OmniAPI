@@ -1,17 +1,13 @@
 """External third-party API service credentials model."""
 
+from __future__ import annotations
+
 import enum
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
-
-if TYPE_CHECKING:
-    from app.models.usage_log import UsageLog
-    from app.models.user import User
+from app.models.parsing import parse_datetime
 
 
 class ExternalServiceStatus(str, enum.Enum):
@@ -22,50 +18,46 @@ class ExternalServiceStatus(str, enum.Enum):
     ERROR = "error"
 
 
-class ExternalService(Base):
+@dataclass
+class ExternalService:
     """User-configured external API (e.g. OpenWeatherMap, NewsAPI)."""
 
-    __tablename__ = "external_services"
-    __table_args__ = (
-        UniqueConstraint("user_id", "service_name", name="uq_external_services_user_id_service_name"),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    service_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    api_key_encrypted: Mapped[str] = mapped_column(String(500), nullable=False)
-    max_calls_per_hour: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100")
-    status: Mapped[ExternalServiceStatus] = mapped_column(
-        Enum(
-            ExternalServiceStatus,
-            name="external_service_status",
-            values_callable=lambda x: [e.value for e in x],
-        ),
-        nullable=False,
-        server_default=ExternalServiceStatus.ACTIVE.value,
-    )
-    error_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True, onupdate=func.now()
-    )
-    last_tested_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    user: Mapped["User"] = relationship("User", back_populates="external_services")
-    usage_logs: Mapped[List["UsageLog"]] = relationship(
-        "UsageLog", back_populates="service", passive_deletes=True
-    )
+    id: int
+    user_id: int
+    service_name: str
+    api_key_encrypted: str
+    max_calls_per_hour: int
+    status: str
+    created_at: datetime
+    error_message: str | None = None
+    updated_at: datetime | None = None
+    last_tested_at: datetime | None = None
 
     @property
     def service_id(self) -> int:
         """Alias for id used in API responses."""
         return self.id
+
+    @property
+    def is_active(self) -> bool:
+        """Whether the integration is usable."""
+        return self.status == ExternalServiceStatus.ACTIVE.value
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "ExternalService":
+        """Build an external service from a database row."""
+        return cls(
+            id=int(row["id"]),
+            user_id=int(row["user_id"]),
+            service_name=row["service_name"],
+            api_key_encrypted=row["api_key_encrypted"],
+            max_calls_per_hour=int(row["max_calls_per_hour"]),
+            status=str(row["status"]),
+            created_at=parse_datetime(row["created_at"]),  # type: ignore[arg-type]
+            error_message=row.get("error_message"),
+            updated_at=parse_datetime(row.get("updated_at")),
+            last_tested_at=parse_datetime(row.get("last_tested_at")),
+        )
 
     def __repr__(self) -> str:
         return (

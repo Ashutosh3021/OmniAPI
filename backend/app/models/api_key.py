@@ -1,40 +1,42 @@
 """API key model for authenticating OmniAPI requests."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.db.base import Base
-
-if TYPE_CHECKING:
-    from app.models.user import User
+from app.models.parsing import parse_bool, parse_datetime
 
 
-class APIKey(Base):
+@dataclass
+class APIKey:
     """Hashed API key belonging to a user."""
 
-    __tablename__ = "api_keys"
-    __table_args__ = (Index("ix_api_keys_key_hash", "key_hash"),)
+    id: int
+    user_id: int
+    key_hash: str
+    name: str
+    is_active: bool
+    created_at: datetime
+    last_used_at: datetime | None = None
+    expires_at: datetime | None = None
+    updated_at: datetime | None = None
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True, onupdate=func.now()
-    )
-
-    user: Mapped["User"] = relationship("User", back_populates="api_keys")
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "APIKey":
+        """Build an API key from a database row."""
+        return cls(
+            id=int(row["id"]),
+            user_id=int(row["user_id"]),
+            key_hash=row["key_hash"],
+            name=row["name"],
+            is_active=parse_bool(row.get("is_active")),
+            created_at=parse_datetime(row["created_at"]),  # type: ignore[arg-type]
+            last_used_at=parse_datetime(row.get("last_used_at")),
+            expires_at=parse_datetime(row.get("expires_at")),
+            updated_at=parse_datetime(row.get("updated_at")),
+        )
 
     def __repr__(self) -> str:
         return f"<APIKey(id={self.id}, user_id={self.user_id}, name={self.name!r})>"

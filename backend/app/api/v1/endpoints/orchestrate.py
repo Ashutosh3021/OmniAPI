@@ -1,9 +1,8 @@
 """Orchestration endpoint."""
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
-from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.database import Database, get_db
 from app.middleware.rate_limit import get_tier_limit
 from app.models.user import User
 from app.schemas.orchestrate import OrchestrateRequest, OrchestrateResponse
@@ -42,16 +41,21 @@ async def orchestrate(
     request: Request,
     response: Response,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth_or_api_key),
 ) -> OrchestrateResponse:
     """Orchestrate calls to one or more configured external services."""
-    orchestrator = OrchestratorService(db=db, user=current_user)
+    orchestrator = OrchestratorService(
+        db=db,
+        user=current_user,
+        api_key_id=getattr(request.state, "api_key_id", None),
+    )
     result = await orchestrator.orchestrate(body)
 
     # Record usage after the response has been sent, so the caller is not
     # held up by the write.
-    background_tasks.add_task(orchestrator.flush_usage)
+    usage_rows = orchestrator.usage_rows
+    background_tasks.add_task(orchestrator.flush_usage, usage_rows)
 
     _attach_rate_limit_headers(request, response, current_user)
     response.headers["X-Cache"] = _cache_state(result.results)

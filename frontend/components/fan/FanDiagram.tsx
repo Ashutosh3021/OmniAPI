@@ -54,6 +54,7 @@ export function FanDiagram({
 
   const rootRef = useRef<HTMLDivElement>(null);
   const signalRefs = useRef<(SVGPathElement | null)[]>([]);
+  const flowRefs = useRef<(SVGPathElement | null)[]>([]);
   const gatherRefs = useRef<(SVGPathElement | null)[]>([]);
   const nodeRefs = useRef<(SVGGElement | null)[]>([]);
   const envelopeRef = useRef<SVGGElement>(null);
@@ -68,6 +69,7 @@ export function FanDiagram({
     const reduced = prefersReducedMotion();
     const ctx = gsap.context(() => {
       const signals = signalRefs.current.filter(Boolean) as SVGPathElement[];
+      const flows = flowRefs.current.filter(Boolean) as SVGPathElement[];
       const gathers = gatherRefs.current.filter(Boolean) as SVGPathElement[];
       const nodes = nodeRefs.current.filter(Boolean) as SVGGElement[];
 
@@ -80,6 +82,28 @@ export function FanDiagram({
       gathers.forEach((el) =>
         gsap.set(el, { strokeDasharray: "18 4000", strokeDashoffset: 0 })
       );
+
+      // The idle state: a soft signal always travelling along every branch.
+      // It never stops, so the diagram is alive even when nothing is called.
+      if (!reduced) {
+        flows.forEach((el, i) => {
+          const len = el.getTotalLength() || 1;
+          gsap.set(el, {
+            strokeDasharray: `${len * 0.3} ${len}`,
+            strokeDashoffset: 0,
+          });
+          gsap.fromTo(
+            el,
+            { strokeDashoffset: 0 },
+            {
+              strokeDashoffset: -len,
+              duration: 3.2 + i * 0.45,
+              ease: "none",
+              repeat: -1,
+            }
+          );
+        });
+      }
 
       const draw = (master: gsap.core.Timeline) => {
         const travel = (ms?: number) =>
@@ -225,6 +249,16 @@ export function FanDiagram({
           {/* The signal: one dash per branch, travelling out and back. */}
           {geometry.branches.map((b, i) => (
             <path
+              key={`flow-${b.id}`}
+              d={b.d}
+              className="fan-flow"
+              ref={(el) => {
+                flowRefs.current[i] = el;
+              }}
+            />
+          ))}
+          {geometry.branches.map((b, i) => (
+            <path
               key={b.id}
               d={b.d}
               className="fan-branch"
@@ -271,6 +305,14 @@ export function FanDiagram({
                     height={node.h}
                     rx={4}
                     className="fan-envelope"
+                  />
+                )}
+                {!node.boxed && (
+                  <circle
+                    cx={geometry.branches[i]?.end.x ?? 0}
+                    cy={geometry.branches[i]?.end.y ?? 0}
+                    r={3}
+                    className="fan-packet"
                   />
                 )}
                 <text

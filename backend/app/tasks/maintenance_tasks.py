@@ -3,12 +3,8 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete
-
 from app.config import get_settings
-from app.db.session import SessionLocal
-from app.models.usage_log import UsageLog
-from app.models.webhook_event import WebhookEvent
+from app.db.database import get_database
 from app.services import session_service
 from app.tasks.celery_app import celery_app
 
@@ -26,31 +22,21 @@ def purge_old_usage_logs() -> dict:
     and every analytics query has to scan them.
     """
     settings = get_settings()
-    db = SessionLocal()
+    db = get_database()
     try:
         now = datetime.now(timezone.utc)
         usage_cutoff = now - timedelta(days=settings.usage_log_retention_days)
         event_cutoff = now - timedelta(days=settings.webhook_event_retention_days)
 
-        deleted_events = db.execute(
-            delete(WebhookEvent).where(WebhookEvent.created_at < event_cutoff)
-        ).rowcount
-        db.commit()
-
-        deleted_usage = db.execute(
-            delete(UsageLog).where(UsageLog.created_at < usage_cutoff)
-        ).rowcount
-        db.commit()
-
+        deleted_events = db.webhook_events.delete_older_than(event_cutoff)
+        deleted_usage = db.usage_logs.delete_older_than(usage_cutoff)
         deleted_sessions = session_service.purge_expired(db)
 
         return {
-            "deleted_usage_logs": int(deleted_usage or 0),
-            "deleted_webhook_events": int(deleted_events or 0),
+            "deleted_usage_logs": deleted_usage,
+            "deleted_webhook_events": deleted_events,
             "deleted_refresh_tokens": deleted_sessions,
         }
     except Exception:
         logger.exception("purge_old_usage_logs failed")
         return {"error": "purge failed"}
-    finally:
-        db.close()

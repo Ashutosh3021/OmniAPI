@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthCard } from "@/components/auth/AuthCard";
-import { LoginForm } from "@/components/forms/LoginForm";
+import { SignInOptions } from "@/components/auth/SignInOptions";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -13,9 +13,9 @@ export default function LoginPage() {
   return (
     <AuthCard
       title="Sign in"
-      subtitle="Use the email and password of your OmniAPI account."
+      subtitle="One account, one gateway. Continue with the provider you already use."
     >
-      <LoginForm />
+      <SignInOptions />
     </AuthCard>
   );
 }

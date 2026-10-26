@@ -1,18 +1,22 @@
-"""Pytest fixtures for OmniAPI backend tests."""
+"""Pytest fixtures for OmniAPI backend tests.
+
+The data store is a remote HTTP service in production. The suite runs
+against an in-process SQLite client that speaks the same ``SqlClient``
+contract, so the real SQL — including constraints, cascades and CHECKs — is
+exercised without a network round trip.
+"""
 
 import os
 from collections.abc import AsyncGenerator, Generator
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 # Load test env before application imports (CI env vars take precedence)
 _env_test = Path(__file__).resolve().parents[1] / ".env.test"
@@ -21,23 +25,22 @@ if _env_test.is_file():
 
 os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("DEBUG", "True")
-# Fast offline suite locally; CI sets DATABASE_URL to PostgreSQL via workflow env
-if os.environ.get("CI") != "true":
-    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-else:
-    os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/omniapi_test")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-only")
 os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost:3000")
 os.environ.setdefault("REFRESH_TOKEN_EXPIRE_DAYS", "7")
 os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
 os.environ.setdefault("CELERY_TASK_TIMEOUT", "10")
+# The suite talks to the in-process SQLite client, not a remote data store.
+os.environ.setdefault("PYRONITES_URL", "http://localhost:8000")
+os.environ.setdefault("PYRONITES_KEY", "test-key")
+os.environ.setdefault("PYRONITES_PROJECT_ID", "omniapi_test")
 
 from app.config import get_settings  # noqa: E402
-from app.db.base import Base  # noqa: E402
-from app.db.session import get_db  # noqa: E402
+from app.db.client import DatabaseError  # noqa: E402
+from app.db.database import configure_database, get_db, reset_database  # noqa: E402
+from app.db.sqlite_client import SqliteClient  # noqa: E402
 from app.main import create_app  # noqa: E402
-from app.models import APIKey, ExternalService, UsageLog, User, Webhook, WebhookEvent  # noqa: F401, E402
 from app.tasks.celery_app import celery_app  # noqa: E402
 
 celery_app.conf.task_always_eager = True
@@ -46,7 +49,9 @@ celery_app.conf.result_backend = "cache+memory://"
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "uses_redis: test requires real or fake Redis (no autouse mock)")
+    config.addinivalue_line(
+        "markers", "uses_redis: test requires real or fake Redis (no autouse mock)"
+    )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -67,8 +72,15 @@ def _reset_shared_clients() -> Generator[None, None, None]:
     import app.services.redis_client as redis_client_mod
 
     redis_client_mod._redis = None
+    _limiter_state.counts.clear()
     yield
     redis_client_mod._redis = None
+    _limiter_state.counts.clear()
+
+
+# Counts emulated by the fake Redis sliding-window script, so limits trip in
+# tests exactly as they do in production.
+_limiter_state = SimpleNamespace(counts={})
 
 
 @pytest.fixture(autouse=True)
@@ -113,17 +125,23 @@ def _mock_redis_clients(request: pytest.FixtureRequest) -> Generator[None, None,
     redis_client.zadd = AsyncMock()
     redis_client.expire = AsyncMock()
     redis_client.zrange = AsyncMock(return_value=[])
-    # The rate limiter uses an atomic Lua script; return a well-formed result.
-    redis_client.register_script = MagicMock(
-        return_value=AsyncMock(return_value=[1, 99, 0])
-    )
+
+    async def _fake_sliding_window(keys=None, args=None, client=None):
+        """Emulate the atomic sliding-window Lua script."""
+        key = keys[0]
+        limit = int(args[2])
+        count = _limiter_state.counts.get(key, 0)
+        if count >= limit:
+            return [0, 0, 60]
+        _limiter_state.counts[key] = count + 1
+        return [1, limit - count - 1, 0]
+
+    redis_client.register_script = MagicMock(return_value=_fake_sliding_window)
     redis_client.pipeline = MagicMock(return_value=redis_client)
     redis_client.execute = AsyncMock(return_value=[0, 0])
     redis_client.aclose = AsyncMock()
 
-    with (
-        patch("app.services.redis_client.aioredis.from_url", return_value=redis_client),
-    ):
+    with (patch("app.services.redis_client.aioredis.from_url", return_value=redis_client),):
         redis_client.ping = AsyncMock(return_value=True)
         yield
 
@@ -140,124 +158,126 @@ def _mock_celery_inspect() -> Generator[None, None, None]:
 
 
 @pytest.fixture
-def db_engine():
-    """In-memory SQLite engine for isolated tests."""
-    from sqlalchemy import event
-
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-    @event.listens_for(engine, "connect")
-    def _sqlite_fk_pragma(dbapi_connection, _connection_record) -> None:
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    Base.metadata.create_all(bind=engine)
-    yield engine
-    Base.metadata.drop_all(bind=engine)
-
-
-@pytest.fixture
-def db_session(db_engine) -> Generator[Session, None, None]:
-    """Database session with rollback after each test."""
-    connection = db_engine.connect()
-    transaction = connection.begin()
-    session = sessionmaker(bind=connection, expire_on_commit=False)()
+def db():
+    """The database handle backed by an in-process SQLite database."""
+    client = SqliteClient(path=":memory:")
+    database = configure_database(client)
     try:
-        yield session
+        yield database
     finally:
-        session.close()
-        transaction.rollback()
-        connection.close()
+        reset_database()
+        client.close()
 
 
 @pytest.fixture
-def db(db_session: Session) -> Session:
-    """Alias for db_session per Phase 6 spec."""
-    return db_session
+def db_session(db):
+    """Backwards-compatible alias for the database handle."""
+    return db
 
 
 @pytest.fixture
-def client(db_session: Session) -> Generator[TestClient, None, None]:
-    """FastAPI test client with in-memory database."""
+def app(db):
+    """FastAPI application bound to the test database."""
+    application = create_app()
+    application.dependency_overrides[get_db] = lambda: db
+    yield application
+    application.dependency_overrides.clear()
 
-    def override_get_db() -> Generator[Session, None, None]:
-        try:
-            yield db_session
-        finally:
-            pass
 
-    app = create_app()
-    app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture
+def client(app) -> Generator[TestClient, None, None]:
+    """Synchronous test client."""
+
     with TestClient(app) as test_client:
         yield test_client
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def client_db_down(db_session: Session) -> Generator[TestClient, None, None]:
-    """Test client simulating database connectivity failure."""
+def client_db_down(app, db) -> Generator[TestClient, None, None]:
+    """Test client whose data store is unreachable."""
 
-    def override_get_db() -> Generator[Session, None, None]:
-        try:
-            yield db_session
-        finally:
-            pass
+    def _boom(*args, **kwargs):
+        raise DatabaseError("database down", code="unreachable")
 
-    app = create_app()
-    app.dependency_overrides[get_db] = override_get_db
-
-    with patch.object(db_session, "execute", side_effect=Exception("database down")):
+    with patch.object(db, "ping", side_effect=_boom):
         with TestClient(app) as test_client:
             yield test_client
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def test_user(db_session: Session) -> User:
-    """Pre-created active user for tests."""
-    from app.services import auth_service
-    from app.models.user import User, UserTier
+async def async_client(app) -> AsyncGenerator:
+    """Asynchronous test client.
 
-    user = User(
+    Shares the event loop with async fixtures such as ``fake_redis``, which
+    a synchronous TestClient cannot do — its portal runs the app on a
+    different loop.
+    """
+    import httpx
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
+def test_user(db) -> "object":
+    """Pre-created active user for tests."""
+    from app.models.user import UserTier
+
+    return db.users.create(
         email="testuser@example.com",
-        password_hash=auth_service.hash_password("securepass123"),
         first_name="Test",
         last_name="User",
-        tier=UserTier.FREE,
-        is_active=True,
+        tier=UserTier.FREE.value,
+        created_at=datetime.now(timezone.utc),
     )
-    db_session.add(user)
-    db_session.commit()
-    db_session.refresh(user)
-    return user
 
 
 @pytest.fixture
-def auth_headers(client: TestClient) -> dict[str, str]:
+def access_token(db, test_user) -> str:
+    """A valid access token for the test user."""
+    from app.services import auth_service
+
+    claims = auth_service.build_token_claims(test_user.id, test_user.email, test_user.tier)
+    return auth_service.create_access_token(claims)
+
+
+@pytest.fixture
+def auth_headers(access_token) -> dict[str, str]:
     """Authorization headers with a valid JWT."""
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "user@example.com",
-            "password": "securepass123",
-            "full_name": "Test User",
-        },
-    )
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "user@example.com", "password": "securepass123"},
-    )
-    token = login.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {access_token}"}
 
 
 @pytest.fixture
-def api_key_headers(client: TestClient, auth_headers: dict[str, str]) -> dict[str, str]:
+def make_auth_headers(db):
+    """Return a factory that creates an account and returns headers for it.
+
+    Sign-in goes through an OAuth provider, which the tests do not call. This
+    factory creates the account directly and mints the same access token the
+    exchange endpoint would have issued.
+    """
+    from datetime import datetime, timezone
+
+    from app.services import auth_service
+
+    def _make(email: str = "user@example.com", **user_fields):
+        user = db.users.create(
+            email=email,
+            first_name=user_fields.pop("first_name", "Test"),
+            last_name=user_fields.pop("last_name", "User"),
+            tier=user_fields.pop("tier", "free"),
+            created_at=datetime.now(timezone.utc),
+            **user_fields,
+        )
+        claims = auth_service.build_token_claims(user.id, user.email, user.tier)
+        token = auth_service.create_access_token(claims)
+        return {"Authorization": f"Bearer {token}"}, user
+
+    return _make
+
+
+@pytest.fixture
+def api_key_headers(client, auth_headers: dict[str, str]) -> dict[str, str]:
     """X-API-Key headers using a freshly created OmniAPI key."""
     create = client.post(
         "/api/v1/api-keys",

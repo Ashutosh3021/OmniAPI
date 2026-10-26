@@ -104,7 +104,7 @@ export function GettingStarted() {
       <H3>How it works in four steps</H3>
       <ol className="mb-8 list-none space-y-3">
         {[
-          "Create an OmniAPI account and sign in.",
+          "Sign in with Google or GitHub. The account is created on that first sign-in.",
           "Go to External services and add the API key for each provider, for example OpenWeatherMap or NewsAPI.",
           "Go to API keys and generate one OmniAPI key for your application.",
           "Call POST /api/v1/orchestrate with the services you want. OmniAPI calls them in parallel and returns one envelope.",
@@ -125,7 +125,7 @@ export function GettingStarted() {
           href={site.docsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="link"
+          className="link tap-inline"
         >
           {site.docsUrl.replace("https://", "")}
         </a>
@@ -151,33 +151,28 @@ export function Authentication() {
 
       <H3>1. JWT bearer token, for the dashboard and trusted servers</H3>
       <Para>
-        When you sign in through the dashboard or the{" "}
-        <code className="font-mono text-[0.8125rem]">/auth/login</code> endpoint,
-        you receive an <strong className="text-ink">access token</strong> and a{" "}
+        There is no password sign-in. The dashboard signs you in with Google or
+        GitHub, and the API trades that provider session for an{" "}
+        <strong className="text-ink">access token</strong> and a{" "}
         <strong className="text-ink">refresh token</strong>. Pass the access
         token in the <code className="font-mono text-[0.8125rem]">Authorization</code>{" "}
         header.
       </Para>
       <CodePanel
         language="bash"
-        code={`# 1. Sign in
-curl -X POST ${site.apiUrl}/auth/login \\
-  -H "Content-Type: application/json" \\
-  -d '{"email":"you@example.com","password":"yourpassword"}'
+        code={`# The browser sign-in ends at POST /auth/oauth/exchange, which returns:
+# { "access_token": "eyJ...", "refresh_token": "..." }
 
-# Response
-# { "access_token": "eyJ...", "refresh_token": "eyJ..." }
-
-# 2. Use the token
+# Then every dashboard route takes that access token:
 curl ${site.apiUrl}/api-keys \\
   -H "Authorization: Bearer eyJ..."`}
       />
 
       <Callout type="info">
-        Access tokens expire. When one does, call{" "}
+        Refresh tokens rotate. A call to{" "}
         <code className="font-mono text-[0.8125rem]">POST /auth/refresh</code>{" "}
-        with your <code className="font-mono text-[0.8125rem]">refresh_token</code>{" "}
-        to get a new pair. The dashboard does this for you.
+        revokes the token you presented and returns a new pair, so always
+        overwrite both stored values. The dashboard does this for you.
       </Callout>
 
       <H3>2. OmniAPI key, for your application</H3>
@@ -441,9 +436,11 @@ export function ApiReference() {
     {
       group: "Auth",
       endpoints: [
-        { method: "POST", path: "/auth/register", description: "Create an account" },
-        { method: "POST", path: "/auth/login", description: "Get an access and refresh token pair" },
-        { method: "POST", path: "/auth/refresh", description: "Rotate tokens with a refresh token" },
+        { method: "GET", path: "/auth/oauth/providers", description: "Providers this deployment offers" },
+        { method: "GET", path: "/auth/oauth/{provider}", description: "Start sign-in, redirects to the provider" },
+        { method: "POST", path: "/auth/oauth/exchange", description: "Trade the one-time code for a token pair" },
+        { method: "POST", path: "/auth/refresh", description: "Rotate the pair, the old refresh token is revoked" },
+        { method: "POST", path: "/auth/logout", description: "Revoke the refresh token" },
         { method: "GET", path: "/auth/me", description: "Return the current user" },
       ],
     },
@@ -504,7 +501,7 @@ export function ApiReference() {
           href={site.docsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="link"
+          className="link tap-inline"
         >
           {site.docsUrl.replace("https://", "")}
         </a>

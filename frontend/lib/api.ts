@@ -105,9 +105,10 @@ async function request<T>(
         // Retry the original request with new token
         return request<T>(path, { ...options, skipAuthRefresh: true });
       } else {
-        // Refresh failed, redirect to login
+        // Refresh failed. Clear the session and let the auth provider route
+        // the user softly, without reloading the document.
         clearAuth();
-        window.location.href = "/login";
+        window.dispatchEvent(new CustomEvent("omniapi:unauthorized"));
       }
     }
 

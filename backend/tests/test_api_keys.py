@@ -73,36 +73,10 @@ def test_api_keys_require_auth(client) -> None:
     assert response.status_code == 401
 
 
-def test_tenant_isolation(client, db_session) -> None:
+def test_tenant_isolation(client, make_auth_headers) -> None:
     """User B cannot revoke User A's API key."""
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "usera@example.com",
-            "password": "password123",
-            "full_name": "User A",
-        },
-    )
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "userb@example.com",
-            "password": "password123",
-            "full_name": "User B",
-        },
-    )
-
-    login_a = client.post(
-        "/api/v1/auth/login",
-        json={"email": "usera@example.com", "password": "password123"},
-    )
-    headers_a = {"Authorization": f"Bearer {login_a.json()['access_token']}"}
-
-    login_b = client.post(
-        "/api/v1/auth/login",
-        json={"email": "userb@example.com", "password": "password123"},
-    )
-    headers_b = {"Authorization": f"Bearer {login_b.json()['access_token']}"}
+    headers_a, _ = make_auth_headers("usera@example.com")
+    headers_b, _ = make_auth_headers("userb@example.com")
 
     created = client.post(
         "/api/v1/api-keys",
@@ -115,12 +89,12 @@ def test_tenant_isolation(client, db_session) -> None:
     assert response.status_code == 404
 
 
-def test_validate_api_key_returns_user(client, auth_headers, db_session) -> None:
+def test_validate_api_key_returns_user(client, auth_headers, db) -> None:
     create = client.post(
         "/api/v1/api-keys",
         headers=auth_headers,
         json={"name": "Validate Me"},
     )
     raw_key = create.json()["raw_key"]
-    user = api_key_service.validate_api_key(raw_key, db_session)
-    assert user.email == "user@example.com"
+    user = api_key_service.validate_api_key(raw_key, db)
+    assert user.email == "testuser@example.com"

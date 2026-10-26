@@ -85,7 +85,17 @@ export default function ApiKeyDetailPage() {
     }
   };
 
-  if (loading) return <Spinner full label="Loading key" />;
+  if (loading) {
+    return (
+      <div className="max-w-2xl">
+        <PageHeader
+          title="API key"
+          description="Reading this key from the gateway."
+        />
+        <Spinner label="Loading key" />
+      </div>
+    );
+  }
 
   if (notFound || !key) {
     return (

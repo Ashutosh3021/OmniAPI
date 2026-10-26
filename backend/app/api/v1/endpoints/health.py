@@ -5,11 +5,9 @@ import logging
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.session import get_db
+from app.db.database import Database, get_db
 from app.schemas.health import HealthChecks, HealthResponse
 from app.services.redis_client import get_redis
 from app.tasks.celery_app import celery_app
@@ -35,6 +33,14 @@ async def _check_redis() -> str:
         return "unreachable"
 
 
+def _check_database(db: Database) -> str:
+    try:
+        return "ok" if db.ping() else "unreachable"
+    except Exception:  # noqa: BLE001 - reported, not raised
+        logger.exception("Database health check failed")
+        return "unreachable"
+
+
 def _check_celery() -> str:
     try:
         # ping() returns a dict of {worker_name: {"ok": "pong"}} for each
@@ -47,15 +53,6 @@ def _check_celery() -> str:
         return "no_workers"
     except Exception as exc:  # noqa: BLE001 - reported, not raised
         logger.warning("Celery health check failed: %s", exc)
-        return "unreachable"
-
-
-def _check_database(db: Session) -> str:
-    try:
-        db.execute(text("SELECT 1"))
-        return "ok"
-    except Exception:  # noqa: BLE001 - reported, not raised
-        logger.exception("Database health check failed")
         return "unreachable"
 
 
@@ -75,14 +72,14 @@ async def liveness_check() -> JSONResponse:
 
 
 @router.get("/health/ready", tags=["health"])
-async def readiness_check(db: Session = Depends(get_db)) -> JSONResponse:
+async def readiness_check(db: Database = Depends(get_db)) -> JSONResponse:
     """Readiness: verifies the dependencies the request path actually needs.
 
     HTTP 503 is returned only when a critical dependency is unreachable.
     """
     settings = get_settings()
     checks: dict[str, str] = {
-        "database": _check_database(db),
+        "database": await asyncio.to_thread(_check_database, db),
         "redis": await _check_redis(),
     }
     # Blocking broker call — run it off the event loop.
@@ -109,6 +106,6 @@ async def readiness_check(db: Session = Depends(get_db)) -> JSONResponse:
 
 
 @router.get("/health", tags=["health"])
-async def health_check(db: Session = Depends(get_db)) -> JSONResponse:
+async def health_check(db: Database = Depends(get_db)) -> JSONResponse:
     """Alias of :func:`readiness_check`, kept for backwards compatibility."""
     return await readiness_check(db)

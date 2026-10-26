@@ -1,5 +1,5 @@
 # Production stack — use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-# Set secrets via .env (never commit). PostgreSQL and Redis are not exposed to the host.
+# Set secrets via .env (never commit). Redis is not exposed to the host.
 
 version: "3.9"
 
@@ -7,7 +7,9 @@ services:
   api:
     restart: always
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      PYRONITES_URL: ${PYRONITES_URL}
+      PYRONITES_KEY: ${PYRONITES_KEY}
+      PYRONITES_PROJECT_ID: ${PYRONITES_PROJECT_ID}
       REDIS_URL: ${REDIS_URL}
       SECRET_KEY: ${SECRET_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
@@ -28,7 +30,13 @@ services:
       - api
     restart: always
 
-  celery_worker:
+  celery_external:
+    restart: always
+
+  celery_webhooks:
+    restart: always
+
+  celery_maintenance:
     restart: always
 
   celery_beat:
@@ -38,7 +46,13 @@ services:
     restart: always
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    # Evict rather than error when the cache fills up. The default
+    # noeviction policy turns a cache flood into Redis write errors, and the
+    # rate limiter shares this instance — which would break authentication.
+    command: >
+      redis-server --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     expose:
       - "6379"
     ports: []

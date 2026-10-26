@@ -53,7 +53,7 @@ export function CopyButton({
       aria-label={copied ? "Copied to clipboard" : `${label} to clipboard`}
       aria-live="polite"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded border border-ink/15 px-2 py-1 font-mono text-micro uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent/45 hover:text-accent",
+        "copy-btn inline-flex items-center gap-1.5 rounded border border-ink/15 px-2 py-1 font-mono text-micro uppercase tracking-[0.08em] text-muted transition-colors hover:border-accent/45 hover:text-accent",
         className
       )}
     >

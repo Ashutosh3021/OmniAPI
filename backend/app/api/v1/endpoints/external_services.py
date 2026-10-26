@@ -4,10 +4,8 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.database import Database, get_db
 from app.middleware.tenant_middleware import get_tenant_id
 from app.models.external_service import ExternalService, ExternalServiceStatus
 from app.models.user import User
@@ -31,9 +29,7 @@ router = APIRouter()
 
 
 def _to_response(service: ExternalService) -> ExternalServiceResponse:
-    status_value = (
-        service.status.value if hasattr(service.status, "value") else str(service.status)
-    )
+    status_value = service.status.value if hasattr(service.status, "value") else str(service.status)
     return ExternalServiceResponse(
         service_id=service.id,
         service_name=service.service_name,
@@ -78,68 +74,51 @@ def list_supported_services(
 )
 def create_external_service(
     body: ExternalServiceCreate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> ExternalServiceResponse:
     _ = tenant_id
     service_name = body.service_name.value
 
-    existing = db.scalar(
-        select(ExternalService).where(
-            ExternalService.user_id == current_user.id,
-            ExternalService.service_name == service_name,
-        )
-    )
-    if existing is not None:
+    existing = db.external_services.list_for_user_named(current_user.id, [service_name])
+    if existing:
         raise DuplicateResourceError(
             f"Service '{service_name}' is already configured. "
             f"Update it instead of adding a second one."
         )
 
-    service = ExternalService(
+    service = db.external_services.create(
         user_id=current_user.id,
         service_name=service_name,
         api_key_encrypted=encryption.encrypt(body.api_key),
         max_calls_per_hour=body.max_calls_per_hour,
-        status=ExternalServiceStatus.ACTIVE,
+        status=ExternalServiceStatus.ACTIVE.value,
+        created_at=datetime.now(timezone.utc),
     )
-    db.add(service)
-    db.commit()
-    db.refresh(service)
     return _to_response(service)
 
 
 @router.get("", response_model=list[ExternalServiceResponse])
 def list_external_services(
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> list[ExternalServiceResponse]:
     _ = tenant_id
-    stmt = (
-        select(ExternalService)
-        .where(ExternalService.user_id == current_user.id)
-        .order_by(ExternalService.created_at.desc())
-    )
-    services = db.scalars(stmt).all()
+    services = db.external_services.list_for_user(current_user.id)
     return [_to_response(service) for service in services]
 
 
 @router.get("/{service_id}", response_model=ExternalServiceResponse)
 def get_external_service(
     service_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> ExternalServiceResponse:
     _ = tenant_id
-    service = db.scalar(
-        select(ExternalService).where(
-            ExternalService.id == service_id,
-            ExternalService.user_id == current_user.id,
-        )
-    )
+    service = db.external_services.get_for_user(service_id, current_user.id)
     if service is None:
         raise ResourceNotFoundError("External service not found")
     return _to_response(service)
@@ -148,7 +127,7 @@ def get_external_service(
 @router.post("/{service_id}/test", response_model=ExternalServiceTestResponse)
 async def test_external_service(
     service_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> ExternalServiceTestResponse:
@@ -158,12 +137,7 @@ async def test_external_service(
     is in the body, so the dashboard can show it inline.
     """
     _ = tenant_id
-    service = db.scalar(
-        select(ExternalService).where(
-            ExternalService.id == service_id,
-            ExternalService.user_id == current_user.id,
-        )
-    )
+    service = db.external_services.get_for_user(service_id, current_user.id)
     if service is None:
         raise ResourceNotFoundError("External service not found")
 
@@ -176,18 +150,30 @@ async def test_external_service(
     success, message = await probe_service(definition, service.api_key_encrypted)
 
     now = datetime.now(timezone.utc)
-    service.last_tested_at = now
     if success:
-        service.status = ExternalServiceStatus.ACTIVE
-        service.error_message = None
+        service = db.external_services.update(
+            service.id,
+            status=ExternalServiceStatus.ACTIVE.value,
+            clear_error=True,
+            last_tested_at=now,
+            updated_at=now,
+        )
     else:
-        service.error_message = message[:500]
         # A rejected credential is an error state; other failures (rate
         # limits, upstream outages) leave the configured status alone.
-        if "returned 401" in message or "returned 403" in message or "rejected" in message.lower():
-            service.status = ExternalServiceStatus.ERROR
-    db.commit()
-    db.refresh(service)
+        rejected = (
+            "returned 401" in message or "returned 403" in message or "rejected" in message.lower()
+        )
+        service = db.external_services.update(
+            service.id,
+            error_message=message[:500],
+            status=ExternalServiceStatus.ERROR.value if rejected else None,
+            last_tested_at=now,
+            updated_at=now,
+        )
+
+    if service is None:
+        raise ResourceNotFoundError("External service not found")
 
     return ExternalServiceTestResponse(
         success=success,
@@ -201,54 +187,40 @@ async def test_external_service(
 def update_external_service(
     service_id: int,
     body: ExternalServiceUpdate,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> ExternalServiceResponse:
     _ = tenant_id
-    service = db.scalar(
-        select(ExternalService).where(
-            ExternalService.id == service_id,
-            ExternalService.user_id == current_user.id,
-        )
+    if db.external_services.get_for_user(service_id, current_user.id) is None:
+        raise ResourceNotFoundError("External service not found")
+
+    # A new credential invalidates whatever the old one told us.
+    new_key = body.api_key is not None
+    service = db.external_services.update(
+        service_id,
+        api_key_encrypted=encryption.encrypt(body.api_key) if new_key else None,
+        max_calls_per_hour=body.max_calls_per_hour,
+        status=body.status,
+        clear_error=new_key,
+        clear_last_tested=new_key,
+        updated_at=datetime.now(timezone.utc),
     )
     if service is None:
         raise ResourceNotFoundError("External service not found")
 
-    if body.api_key is not None:
-        service.api_key_encrypted = encryption.encrypt(body.api_key)
-        # A new credential invalidates whatever the old one told us.
-        service.error_message = None
-        service.last_tested_at = None
-    if body.max_calls_per_hour is not None:
-        service.max_calls_per_hour = body.max_calls_per_hour
-    if body.status is not None:
-        try:
-            service.status = ExternalServiceStatus(body.status)
-        except ValueError as exc:
-            raise ResourceNotFoundError("Invalid status value") from exc
-
-    db.commit()
-    db.refresh(service)
     return _to_response(service)
 
 
 @router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_external_service(
     service_id: int,
-    db: Session = Depends(get_db),
+    db: Database = Depends(get_db),
     current_user: User = Depends(require_auth),
     tenant_id: str = Depends(get_tenant_id),
 ) -> None:
     _ = tenant_id
-    service = db.scalar(
-        select(ExternalService).where(
-            ExternalService.id == service_id,
-            ExternalService.user_id == current_user.id,
-        )
-    )
-    if service is None:
+    if db.external_services.get_for_user(service_id, current_user.id) is None:
         raise ResourceNotFoundError("External service not found")
 
-    db.delete(service)
-    db.commit()
+    db.external_services.delete(service_id)

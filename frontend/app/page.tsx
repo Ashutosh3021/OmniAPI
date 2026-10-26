@@ -29,10 +29,8 @@ export default function HomePage() {
 
       <main id="main" tabIndex={-1}>
         {/* Poster: one statement, set wide. */}
-        <section className="mx-auto w-full max-w-shell px-4 pb-14 pt-14 md:px-8 md:pt-20 lg:pb-20 lg:pt-24">
-          <p className="label-wire">{hero.kicker}</p>
-
-          <h1 className="t-display mt-6 text-ink">
+        <section className="mx-auto w-full max-w-shell px-4 pb-14 pt-12 md:px-8 md:pt-20 lg:pb-20 lg:pt-24">
+          <h1 className="t-display text-ink">
             <span data-split="lines" data-intro className="block">
               One call fans out.
             </span>
@@ -45,11 +43,11 @@ export default function HomePage() {
             </span>
           </h1>
 
-          <div className="mt-9 grid grid-cols-1 gap-8 lg:grid-cols-12">
-            <p className="t-body max-w-prose text-muted lg:col-span-6">
+          <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-12">
+            <p className="t-body max-w-prose text-muted lg:col-span-5">
               {hero.body}
             </p>
-            <div className="flex flex-wrap items-center gap-3 lg:col-span-4 lg:col-start-9 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-3 lg:col-span-4 lg:col-start-7">
               <Link
                 href={hero.primaryCta.href}
                 className="btn btn-primary inline-flex items-center justify-center gap-2 rounded bg-accent px-5 py-3 text-ui font-medium"
@@ -79,6 +77,19 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
+
+          <dl className="mt-12 flex flex-wrap gap-x-12 gap-y-4 border-t border-ink/12 pt-5">
+            {[
+              { label: "request", value: "POST /orchestrate" },
+              { label: "fan-out", value: "parallel, not queued" },
+              { label: "response", value: "one envelope, N results" },
+            ].map((f) => (
+              <div key={f.label}>
+                <dt className="label-wire">{f.label}</dt>
+                <dd className="mt-1 font-mono text-ui text-ink">{f.value}</dd>
+              </div>
+            ))}
+          </dl>
         </section>
 
         {/* Asymmetric pair: the diagram and the request that produces it. */}
@@ -204,7 +215,7 @@ export default function HomePage() {
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
                 href={hero.primaryCta.href}
-                className="btn inline-flex items-center justify-center rounded bg-ground px-5 py-3 text-ui font-medium text-ink hover:text-ink"
+                className="btn btn-invert inline-flex items-center justify-center rounded bg-ground px-5 py-3 text-ui font-medium text-ink"
               >
                 <span className="btn__label inline-flex items-center gap-2">
                   {hero.primaryCta.label}
@@ -220,7 +231,7 @@ export default function HomePage() {
               </Link>
               <Link
                 href="/docs"
-                className="btn inline-flex items-center justify-center rounded border border-ground/30 px-5 py-3 text-ui font-medium text-ground hover:border-ground/60"
+                className="btn btn-ghost-invert inline-flex items-center justify-center rounded border border-ground/30 px-5 py-3 text-ui font-medium text-ground"
               >
                 <span className="btn__label inline-flex items-center">
                   {hero.secondaryCta.label}

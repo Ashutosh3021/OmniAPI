@@ -22,7 +22,12 @@ export function CodePanel({
         </span>
         <CopyButton value={code} />
       </figcaption>
-      <pre className="overflow-x-auto px-3.5 py-3.5 text-ink">
+      <pre
+        className="overflow-x-auto px-3.5 py-3.5 text-ink"
+        tabIndex={0}
+        role="region"
+        aria-label={`${title ?? language} code sample`}
+      >
         <code>{code}</code>
       </pre>
     </figure>

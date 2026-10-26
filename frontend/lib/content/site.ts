@@ -19,7 +19,7 @@ export const hero = {
   title: "One call fans out. Many answers gather back.",
   body:
     "Register your provider keys once, mint one OmniAPI key, and POST a list of services to a single endpoint. OmniAPI calls them in parallel, caches the results and returns one envelope.",
-  primaryCta: { label: "Create a free key", href: "/signup" },
+  primaryCta: { label: "Create a free key", href: "/login" },
   secondaryCta: { label: "Read the docs", href: "/docs" },
   note: "The diagram is a simulation. Your own requests use the same shape.",
 } as const;

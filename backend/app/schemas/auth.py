@@ -2,22 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-
-
-class UserRegister(BaseModel):
-    """New user registration payload."""
-
-    email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
-    full_name: str = Field(..., min_length=1, max_length=200)
-
-
-class UserLogin(BaseModel):
-    """User login credentials."""
-
-    email: EmailStr
-    password: str
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Token(BaseModel):
@@ -40,40 +25,35 @@ class UserProfileUpdate(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=200)
 
 
-class ChangePasswordRequest(BaseModel):
-    """Password change request."""
+class OAuthProviderInfo(BaseModel):
+    """A sign-in provider the platform offers."""
 
-    current_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8, max_length=128)
-
-
-class ForgotPasswordRequest(BaseModel):
-    """Password reset request."""
-
-    email: EmailStr
+    id: str
+    name: str
+    configured: bool
 
 
-class ResetPasswordRequest(BaseModel):
-    """Password reset completion."""
+class OAuthProvidersResponse(BaseModel):
+    """The providers the client may render a button for."""
 
-    token: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8, max_length=128)
+    providers: list[OAuthProviderInfo]
 
 
-class ForgotPasswordResponse(BaseModel):
-    """Result of a password reset request.
+class OAuthStartResponse(BaseModel):
+    """Where the browser must be sent to begin a provider sign-in."""
 
-    Always reports "accepted" so the endpoint cannot be used to discover
-    which email addresses have accounts. Outside production the reset token
-    is included so the flow is testable without an email provider.
-    """
+    authorization_url: str
+    state: str
 
-    status: str = "accepted"
-    reset_token: str | None = None
+
+class OAuthExchangeRequest(BaseModel):
+    """Exchange a one-time sign-in code for a token pair."""
+
+    code: str = Field(..., min_length=1, max_length=512)
 
 
 class UserResponse(BaseModel):
-    """Public user profile (no password)."""
+    """Public user profile."""
 
     model_config = ConfigDict(from_attributes=True)
 

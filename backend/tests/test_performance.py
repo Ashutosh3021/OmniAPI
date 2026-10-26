@@ -1,5 +1,6 @@
 """Phase 4 performance layer tests."""
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,15 +12,21 @@ from app.tasks.external_api_tasks import _execute_task
 from app.utils.exceptions import ExternalAPIError
 
 
+def _user(email: str = "limit@example.com") -> User:
+    return User(
+        id=1,
+        email=email,
+        first_name="Perf",
+        last_name="User",
+        tier=UserTier.FREE.value,
+        is_active=True,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
 @pytest.mark.asyncio
 async def test_rate_limit_blocks_when_exceeded() -> None:
-    user = User(
-        id=1,
-        email="limit@example.com",
-        password_hash="x",
-        tier=UserTier.FREE,
-        is_active=True,
-    )
+    user = _user()
     request = MagicMock()
     request.state = MagicMock()
 
@@ -38,14 +45,8 @@ async def test_rate_limit_blocks_when_exceeded() -> None:
 
 
 def test_free_tier_limit_is_100() -> None:
-    user = User(
-        id=1,
-        email="free@example.com",
-        password_hash="x",
-        tier=UserTier.FREE,
-        is_active=True,
-    )
-    assert get_tier_limit(user) == 100
+    assert get_tier_limit(_user("free@example.com")) == 100
+
 
 def test_celery_task_retries_then_fails() -> None:
     from celery.exceptions import MaxRetriesExceededError
@@ -57,11 +58,11 @@ def test_celery_task_retries_then_fails() -> None:
     with patch("app.tasks.external_api_tasks._run_fetch") as mock_fetch:
         mock_fetch.side_effect = ExternalAPIError("upstream down", retryable=False)
 
-        with patch("app.db.session.SessionLocal") as mock_session_factory:
-            session = mock_session_factory.return_value
+        with patch("app.tasks.external_api_tasks.get_database") as mock_db:
+            database = mock_db.return_value
             service = MagicMock()
             service.api_key_encrypted = "encrypted"
-            session.get.return_value = service
+            database.external_services.get_by_id.return_value = service
 
             result = _execute_task(task, "weather", 1, {"city": "London"})
 

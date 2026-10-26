@@ -1,4 +1,4 @@
-# Redis + Celery worker (PostgreSQL via Supabase)
+# Redis + Celery workers (the data store is a remote Pyronites project)
 services:
   redis:
     image: redis:7-alpine
@@ -7,6 +7,13 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    # A cache flood must evict, not error. With the default noeviction
+    # policy a full Redis starts rejecting writes — including the rate
+    # limiter's writes, which would take down authentication entirely.
+    command: >
+      redis-server --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -14,10 +21,42 @@ services:
       retries: 3
     restart: unless-stopped
 
-  celery_worker:
+  # Provider calls. Not on the request path any more (the orchestrator calls
+  # the providers directly), but kept for ad-hoc and scheduled invocations.
+  celery_external:
     build: .
-    container_name: omniapi-celery
-    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4
+    container_name: omniapi-celery-external
+    command: celery -A app.tasks.celery_app worker -Q external --concurrency=4 --loglevel=info
+    env_file:
+      - .env.local
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Outbound webhook delivery. I/O bound, so it gets its own worker.
+  celery_webhooks:
+    build: .
+    container_name: omniapi-celery-webhooks
+    command: celery -A app.tasks.celery_app worker -Q webhooks --concurrency=4 --loglevel=info
+    env_file:
+      - .env.local
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Retention and other scheduled maintenance.
+  celery_maintenance:
+    build: .
+    container_name: omniapi-celery-maintenance
+    command: celery -A app.tasks.celery_app worker -Q maintenance --concurrency=1 --loglevel=info
     env_file:
       - .env.local
     environment:
@@ -45,7 +84,7 @@ services:
   api:
     build: .
     container_name: omniapi-api
-    command: sh -c "alembic -c app/db/alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "python -m app.db.bootstrap && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     env_file:
@@ -56,8 +95,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      celery_worker:
-        condition: service_started
     restart: unless-stopped
     profiles:
       - full

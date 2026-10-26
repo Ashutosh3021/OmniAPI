@@ -42,7 +42,7 @@ export function APIKeysTable({ keys, onDelete }: APIKeysTableProps) {
               href={`/api-keys/${key.key_id}`}
               className="min-w-0 flex-1"
             >
-              <span className="block truncate font-medium text-ink transition-colors group-hover:text-accent">
+              <span className="block truncate font-medium text-ink transition-colors group-hover:text-accent group-hover:translate-x-0.5 transition-transform">
                 {key.name}
               </span>
               <span className="block truncate font-mono text-micro text-muted">
@@ -62,7 +62,7 @@ export function APIKeysTable({ keys, onDelete }: APIKeysTableProps) {
               <button
                 type="button"
                 onClick={() => setPendingDelete(key)}
-                className="shrink-0 rounded p-2 text-muted transition-colors hover:text-bad"
+                className="shrink-0 rounded p-2 text-muted transition-all hover:text-bad hover:scale-110"
                 aria-label={`Delete ${key.name}`}
               >
                 <Trash2 className="h-4 w-4" aria-hidden />

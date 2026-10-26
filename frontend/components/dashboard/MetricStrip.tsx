@@ -40,10 +40,12 @@ export function MetricStrip({ metrics, className }: MetricStripProps) {
             )}
           >
             {m.value}
+            {m.note && (
+              <span className="mt-2 block text-meta font-normal text-muted">
+                {m.note}
+              </span>
+            )}
           </dd>
-          {m.note && (
-            <p className="mt-2 text-meta text-muted">{m.note}</p>
-          )}
         </div>
       ))}
     </dl>

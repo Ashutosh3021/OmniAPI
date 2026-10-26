@@ -1,11 +1,12 @@
 # OmniAPI Backend
 
-Production-grade FastAPI backend with Supabase PostgreSQL, SQLAlchemy ORM, Alembic migrations, and Redis (via Docker Compose).
+Production-grade FastAPI backend with Pyronites (an HTTP data store backed by
+SQLite) and Redis (via Docker Compose).
 
 ## Prerequisites
 
 - Python 3.11+
-- [Supabase](https://supabase.com) project with PostgreSQL credentials
+- A [Pyronites](../pyronites/README.md) project with a read/write API key
 - Docker (optional, for Redis)
 
 ## Quick Start
@@ -22,11 +23,11 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Use **Python 3.11** (recommended). If `pip` reports a conflict between `supabase` and `httpx`, install core dependencies first, then `pip install supabase==2.3.5`.
+Use **Python 3.11** (recommended).
 
 ### 2. Environment variables
 
-Copy the example file and fill in your Supabase credentials:
+Copy the example file and fill in your values:
 
 ```bash
 cp .env.example .env.local
@@ -34,23 +35,26 @@ cp .env.example .env.local
 
 Update `.env.local`:
 
-- `DATABASE_URL` — from Supabase Dashboard → **Settings** → **Database** → **Connection string** (URI mode)
-- `SUPABASE_URL` and `SUPABASE_KEY` — from **Settings** → **API**
+- `PYRONITES_URL`, `PYRONITES_KEY`, `PYRONITES_PROJECT_ID` — from your
+  Pyronites deployment (see [pyronites/README.md](../pyronites/README.md))
 - `SECRET_KEY` — generate a strong random string for production
+- `ENCRYPTION_KEY` — Fernet key for external-service credentials
+- `GOOGLE_CLIENT_ID` / `GITHUB_CLIENT_ID` and their secrets — sign-in (at
+  least one provider must be configured)
 
-Example `DATABASE_URL`:
-
-```
-postgresql://postgres:YOUR_PASSWORD@db.YOUR_PROJECT_REF.supabase.co:5432/postgres
-```
-
-### 3. Run database migrations
+### 3. Apply the schema
 
 From the `backend` directory:
 
 ```bash
-alembic -c app/db/alembic.ini upgrade head
+python -m app.db.bootstrap          # apply the schema
+python -m app.db.bootstrap --check  # report only
 ```
+
+There is no ORM and no migration runner. The schema lives in
+`app/db/schema.sql` as plain DDL, and every statement is `IF NOT EXISTS`, so
+applying it is idempotent — the production start command runs it on every
+boot.
 
 ### 4. Start Redis (optional)
 
@@ -87,12 +91,17 @@ docker compose --profile full up -d
 backend/
 ├── app/
 │   ├── main.py              # FastAPI entry point
-│   ├── config.py            # Pydantic settings
-│   ├── models/              # SQLAlchemy models (6 tables)
-│   ├── db/                  # Base, session, Alembic
+│   ├── config.py            # Pydantic settings (store, Redis, OAuth)
+│   ├── models/              # Dataclasses — no ORM
+│   ├── db/
+│   │   ├── schema.sql       # The DDL; source of truth
+│   │   ├── client.py        # HTTP client for the data store
+│   │   ├── sqlite_client.py # In-process SQLite (tests / local)
+│   │   ├── bootstrap.py     # python -m app.db.bootstrap
+│   │   └── repositories/    # One module per table
 │   ├── api/v1/              # Versioned routes
-│   ├── schemas/             # Pydantic schemas
-│   ├── middleware/          # Error handling
+│   ├── schemas/             # Pydantic request/response schemas
+│   ├── middleware/          # Auth, rate limiting, error handling
 │   └── utils/               # Custom exceptions
 ├── tests/
 ├── requirements.txt
@@ -100,32 +109,58 @@ backend/
 └── docker-compose.yml
 ```
 
-## Database Models
+## Data Layer
 
 | Table | Description |
 |-------|-------------|
-| `users` | Accounts with tier (free/pro/enterprise) |
-| `api_keys` | Hashed API keys per user |
-| `external_services` | Third-party API credentials |
+| `omniapi_users` | Accounts with tier (free/pro/enterprise) |
+| `omniapi_api_keys` | Hashed API keys per user |
+| `omniapi_oauth_identities` | Which provider account maps to which user |
+| `external_services` | Third-party API credentials (Fernet-encrypted) |
 | `usage_logs` | Request analytics |
 | `webhooks` | Outbound webhook subscriptions |
 | `webhook_events` | Delivery queue and history |
+| `refresh_tokens` | Rotating refresh tokens |
 
-## Authentication (Phase 2)
+The `omniapi_` prefix exists because the store reserves the bare names for
+its own tables. Everything the application does goes through the
+repositories in `app/db/repositories/` — no ad-hoc SQL elsewhere.
+
+Constraints you must respect when editing SQL: no triggers (`updated_at` is
+maintained in the application layer), no parameter binding (every literal is
+hex-encoded via `app/db/sql.py`), and the edge in front of the store blocks
+request bodies containing backticks. Details in
+[pyronites/README.md](../pyronites/README.md).
+
+## Authentication
+
+Sign-in is OAuth only (Google / GitHub). Password endpoints do not exist.
 
 | Method | Path | Auth |
 |--------|------|------|
-| `POST` | `/api/v1/auth/register` | Public |
-| `POST` | `/api/v1/auth/login` | Public |
-| `POST` | `/api/v1/auth/refresh` | Public |
-| `GET` | `/api/v1/auth/me` | JWT |
+| `GET`  | `/api/v1/auth/oauth/providers` | Public |
+| `GET`  | `/api/v1/auth/oauth/{provider}` | Public (302 to provider) |
+| `GET`  | `/api/v1/auth/oauth/{provider}/callback` | Public (302 to frontend) |
+| `POST` | `/api/v1/auth/oauth/exchange` | Public (one-time code → tokens) |
+| `POST` | `/api/v1/auth/refresh` | Public (refresh token) |
+| `POST` | `/api/v1/auth/logout` | JWT |
+| `GET`  | `/api/v1/auth/me` | JWT |
 | `POST` | `/api/v1/api-keys` | JWT |
-| `GET` | `/api/v1/api-keys` | JWT |
+| `GET`  | `/api/v1/api-keys` | JWT |
 | `DELETE` | `/api/v1/api-keys/{key_id}` | JWT |
 
-API keys are prefixed with `omni_`. The raw key is returned only on creation. Use `Authorization: Bearer <access_token>` or `X-API-Key: omni_...` for protected routes (via `require_auth` / `require_api_key` dependencies).
+`/auth/register`, `/auth/login`, `/auth/change-password`,
+`/auth/forgot-password` and `/auth/reset-password` return **404**.
 
-## Orchestration (Phase 3)
+The full contract for the frontend is in
+[docs/oauth-integration.md](../docs/oauth-integration.md).
+
+API keys are prefixed with `omni_`. The raw key is returned only on
+creation. Use `Authorization: Bearer <access_token>` or
+`X-API-Key: omni_...` for protected routes (via `require_auth` /
+`require_api_key` dependencies).
+
+## Orchestration
 
 Generate a Fernet encryption key for external API credentials:
 
@@ -144,7 +179,8 @@ Add it to `.env.local` as `ENCRYPTION_KEY`.
 | `DELETE` | `/api/v1/external-services/{service_id}` | JWT |
 | `POST` | `/api/v1/orchestrate` | JWT or `X-API-Key` |
 
-Supported services: `weather` (OpenWeatherMap), `news` (NewsAPI), `stock` (Alpha Vantage).
+Supported services: `weather` (OpenWeatherMap), `news` (NewsAPI), `stock`
+(Alpha Vantage).
 
 Example orchestrate request:
 
@@ -158,7 +194,7 @@ Example orchestrate request:
 }
 ```
 
-## Testing & deployment (Phase 6)
+## Testing & CI
 
 ```bash
 cd backend
@@ -166,12 +202,16 @@ pip install -r requirements.txt
 pytest --cov=app --cov-fail-under=80
 ```
 
-- **62 tests**, offline by default (SQLite + fakeredis mocks)
-- CI: `.github/workflows/ci.yml` (PostgreSQL 15 + Redis 7 on push to `main`/`develop`)
+- Offline by default: the suite uses the in-process SQLite client
+  (`app/db/sqlite_client.py`) plus fakeredis mocks, so it never touches a
+  live data store
+- CI: `.github/workflows/ci.yml` (Redis 7 on push to `main`/`develop`); an
+  integration job runs the suite against a real Celery worker
 - Production Docker: `docker-compose.prod.yml` + `nginx.conf`
-- Deploy guide: [`DeploymentGuide.md`](../DeploymentGuide.md) (Render backend + Vercel frontend)
+- Deploy guide: [`DeploymentGuide.md`](../DeploymentGuide.md) (Render backend
+  + Vercel frontend)
 
-## Observability (Phase 5)
+## Observability
 
 | Method | Path | Auth |
 |--------|------|------|
@@ -180,20 +220,21 @@ pytest --cov=app --cov-fail-under=80
 | `GET` | `/api/v1/analytics/usage?period=last_24h` | JWT |
 | `GET` | `/api/v1/analytics/reports` | JWT (CSV download) |
 
-Webhook event types: `orchestrate.complete`, `orchestrate.failed`, `api_key.created` (HTTPS URLs only).
+Webhook event types: `orchestrate.complete`, `orchestrate.failed`,
+`api_key.created` (HTTPS URLs only).
 
-Start Celery Beat for hourly stats snapshots:
+Start the Celery workers (webhook delivery, maintenance) and the scheduler:
 
 ```bash
-docker compose up -d redis celery_worker celery_beat
+docker compose up -d redis celery_webhooks celery_maintenance celery_beat
 ```
 
-## Performance layer (Phase 4)
+## Performance layer
 
-Start Redis and the Celery worker:
+Start Redis and the Celery workers:
 
 ```bash
-docker compose up -d redis celery_worker
+docker compose up -d redis celery_webhooks celery_maintenance
 ```
 
 Run the API locally (separate terminal):
@@ -203,10 +244,19 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Features:
-- **Redis cache** — per-service TTLs (`weather` 1h, `news` 30m, `stock` 5m); `cache_hit` on repeat requests
-- **Rate limiting** — sliding window per tenant/API key; tier limits: free 100/hr, pro 1000/hr, enterprise 10000/hr
-- **Celery workers** — external API calls run in parallel via `call_weather_api`, `call_news_api`, `call_stock_api` tasks
-- **Headers** on `POST /orchestrate`: `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+- **Redis cache** — per-service TTLs (`weather` 1h, `news` 30m, `stock` 5m);
+  `cache_hit` on repeat requests
+- **User cache** — a 30 s Redis cache in front of the ~450 ms data-store
+  round trip, so authenticated requests do not pay it every time
+- **Rate limiting** — sliding window per tenant/API key; tier limits: free
+  100/hr, pro 1000/hr, enterprise 10000/hr
+- **Parallel fan-out** — the orchestrator calls the providers directly with
+  `asyncio.gather`, so `total_time_ms` is the slowest single upstream call,
+  not the sum of all of them
+- **Celery workers** — outbound webhook delivery and scheduled retention, on
+  separate queues
+- **Headers** on `POST /orchestrate`: `X-RateLimit-Limit`,
+  `X-RateLimit-Remaining`, `X-Cache` (`HIT` / `MISS` / `PARTIAL`)
 
 ## Testing
 
@@ -229,22 +279,10 @@ flake8 app tests
 mypy app
 ```
 
-## Alembic Commands
-
-```bash
-# Apply all migrations
-alembic -c app/db/alembic.ini upgrade head
-
-# Roll back one revision
-alembic -c app/db/alembic.ini downgrade -1
-
-# Create new migration (after model changes)
-alembic -c app/db/alembic.ini revision --autogenerate -m "description"
-```
-
 ## Security Notes
 
 - Never commit `.env` or `.env.local`
-- Use Supabase connection pooling for serverless deployments
-- Enable RLS on tables if exposing data via Supabase Data API
-- Rotate `SECRET_KEY` and database passwords in production
+- Keep the Pyronites key scoped to its project; rotate it if leaked
+- OAuth client secrets stay server-side (Render environment), never in the
+  frontend bundle
+- Rotate `SECRET_KEY` and `ENCRYPTION_KEY` in production

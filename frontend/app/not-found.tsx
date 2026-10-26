@@ -18,9 +18,28 @@ function DeadEnd() {
       role="img"
       aria-label="A request line leaving the spine and ending without an answer"
     >
-      <line x1="28" y1="20" x2="28" y2="140" className="fan-spine fan-spine-base" />
+      <line
+        x1="28"
+        y1="20"
+        x2="28"
+        y2="140"
+        className="fan-spine fan-spine-base"
+      />
+      <line
+        data-pulse
+        x1="28"
+        y1="20"
+        x2="28"
+        y2="140"
+        className="fan-pulse"
+      />
       <circle cx="28" cy="80" r="4" className="fan-packet" />
 
+      <path
+        d="M28,50 C70,50 90,50 120,50 L200,50"
+        className="fan-flow"
+        fill="none"
+      />
       <path
         d="M28,50 C70,50 90,50 120,50 L200,50"
         className="fan-branch"
@@ -46,7 +65,11 @@ export default function NotFound() {
   return (
     <div className="flex min-h-dvh flex-col bg-ground">
       <header className="border-b border-ink/12 px-4 py-5 md:px-8">
-        <Link href="/" className="text-ink" aria-label="OmniAPI home">
+        <Link
+          href="/"
+          className="inline-flex text-ink transition-opacity hover:opacity-70"
+          aria-label="OmniAPI home"
+        >
           <Wordmark />
         </Link>
       </header>

@@ -14,7 +14,7 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[1.05fr_1fr]">
+    <div className="min-h-dvh lg:grid lg:grid-cols-[1.15fr_0.85fr]">
       {/* The concept, on its own field. */}
       <aside className="ink-panel hidden flex-col justify-between px-10 py-12 lg:flex xl:px-14">
         <Link href="/" className="text-ink transition-opacity hover:opacity-80">
@@ -22,8 +22,7 @@ export default function AuthLayout({
         </Link>
 
         <div className="py-10">
-          <p className="label-wire text-muted">one endpoint</p>
-          <p className="t-heading mt-3 max-w-[24ch] text-ink">
+          <p className="t-heading max-w-[24ch] text-ink">
             Every provider you have ever added, behind a single call.
           </p>
 
@@ -45,10 +44,7 @@ export default function AuthLayout({
               key={p}
               className="flex items-start gap-2.5 text-ui text-muted"
             >
-              <span
-                className="lamp mt-1.5 bg-accent"
-                aria-hidden
-              />
+              <span className="lamp mt-1.5 bg-accent" aria-hidden />
               {p}
             </li>
           ))}
@@ -62,9 +58,13 @@ export default function AuthLayout({
           </Link>
         </div>
 
-        <div className="flex flex-1 items-center justify-center py-10">
+        <main
+          id="main"
+          tabIndex={-1}
+          className="flex flex-1 items-center justify-center py-10"
+        >
           <div className="panel w-full max-w-[440px] p-6 md:p-8">{children}</div>
-        </div>
+        </main>
       </div>
     </div>
   );

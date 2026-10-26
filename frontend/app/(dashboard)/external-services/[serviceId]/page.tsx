@@ -70,7 +70,17 @@ export default function ExternalServiceDetailPage() {
     }
   };
 
-  if (loading) return <Spinner full label="Loading service" />;
+  if (loading) {
+    return (
+      <div className="max-w-2xl">
+        <PageHeader
+          title="External service"
+          description="Reading this service from the gateway."
+        />
+        <Spinner label="Loading service" />
+      </div>
+    );
+  }
 
   if (notFound || !service) {
     return (

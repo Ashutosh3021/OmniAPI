@@ -4,13 +4,23 @@
 **Created:** 2026-10-21
 **Scope:** Everything found broken across two review passes — flow/adoption (primary), backend architecture (secondary).
 
+> ⚠️ **Auth contract superseded (2026-10-23).** The sign-in contract in §3 and
+> the items BE-4, BE-12, FE-8, 12e–12g that reference `/auth/register`,
+> `/auth/login`, `change-password`, `forgot-password` and `reset-password`
+> **no longer exist** — those endpoints return 404, and the same sweep
+> replaced SQLAlchemy/Alembic/Supabase with Pyronites. The live auth contract
+> is Google/GitHub OAuth and is documented in
+> [`docs/oauth-integration.md`](./docs/oauth-integration.md), which is now
+> the single source of truth for the auth surface. Treat the §3 auth rows
+> below as history, not as work to implement.
+
 ---
 
 ## 0. Ownership & ground rules
 
 | Lane | Owner | Files |
 |---|---|---|
-| **A — Backend** | This agent | `backend/**`, `supabase/**`, `render.yaml`, `backend/docker-compose*.yml`, `backend/start.sh`, `DeploymentGuide.md` |
+| **A — Backend** | This agent | `backend/**`, `pyronites/**`, `render.yaml`, `backend/docker-compose*.yml`, `backend/start.sh`, `DeploymentGuide.md` |
 | **B — Frontend** | Other agent | `frontend/**` |
 | **C — Contract** | This agent, jointly reviewed | This document, §3 |
 

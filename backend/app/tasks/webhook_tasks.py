@@ -11,11 +11,10 @@ from urllib.parse import urlparse
 
 import httpx
 from celery.exceptions import MaxRetriesExceededError
-from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+from app.db.database import Database, get_database
 from app.models.webhook import Webhook
-from app.models.webhook_event import WebhookEvent, WebhookEventStatus
+from app.models.webhook_event import WebhookEventStatus
 from app.tasks.celery_app import celery_app
 from app.utils import encryption
 
@@ -80,13 +79,11 @@ def assert_deliverable_url(url: str) -> None:
             or ip.is_multicast
             or ip.is_unspecified
         ):
-            raise ValueError(
-                f"Webhook host {host} resolves to the non-public address {address}"
-            )
+            raise ValueError(f"Webhook host {host} resolves to the non-public address {address}")
 
 
 def _record_attempt(
-    db: Session,
+    db: Database,
     webhook: Webhook,
     payload: dict,
     *,
@@ -96,27 +93,18 @@ def _record_attempt(
     error_message: str | None,
 ) -> None:
     now = datetime.now(timezone.utc)
-    db.add(
-        WebhookEvent(
-            webhook_id=webhook.id,
-            user_id=webhook.user_id,
-            event_type=payload.get("event_type", ""),
-            payload=json.dumps(payload),
-            status=WebhookEventStatus.DELIVERED if success else WebhookEventStatus.FAILED,
-            http_status_code=status_code,
-            error_message=error_message,
-            attempt_count=attempt_number,
-            delivered_at=now if success else None,
-            created_at=now,
-        )
+    db.webhook_events.create(
+        webhook_id=webhook.id,
+        user_id=webhook.user_id,
+        event_type=payload.get("event_type", ""),
+        payload=json.dumps(payload),
+        status=(WebhookEventStatus.DELIVERED.value if success else WebhookEventStatus.FAILED.value),
+        http_status_code=status_code,
+        error_message=error_message,
+        attempt_count=attempt_number,
+        created_at=now,
+        delivered_at=now if success else None,
     )
-    webhook.last_triggered_at = now
-    if success:
-        webhook.retry_count = 0
-        webhook.consecutive_failures = 0
-    else:
-        webhook.retry_count = attempt_number
-        webhook.consecutive_failures = (webhook.consecutive_failures or 0) + 1
 
 
 @celery_app.task(
@@ -131,12 +119,12 @@ def dispatch_webhook(self, webhook_id: str, payload: dict) -> dict:
     Records each attempt in WebhookEvent. The subscription is only disabled
     after a sustained run of failures.
     """
-    db = SessionLocal()
+    db = get_database()
     webhook_pk = int(webhook_id)
     attempt_number = self.request.retries + 1
 
     try:
-        webhook = db.get(Webhook, webhook_pk)
+        webhook = db.webhooks.get_by_id(webhook_pk)
         if webhook is None:
             return {"success": False, "error": "Webhook not found"}
 
@@ -184,23 +172,33 @@ def dispatch_webhook(self, webhook_id: str, payload: dict) -> dict:
                 error_message=error_message,
             )
 
+            consecutive = (webhook.consecutive_failures or 0) + 1
+            db.webhooks.record_attempt(
+                webhook.id,
+                retry_count=attempt_number,
+                consecutive_failures=consecutive,
+                last_triggered_at=datetime.now(timezone.utc),
+            )
+
             if self.request.retries < self.max_retries:
-                countdown = RETRY_COUNTDOWNS[
-                    min(self.request.retries, len(RETRY_COUNTDOWNS) - 1)
-                ]
-                db.commit()
+                countdown = RETRY_COUNTDOWNS[min(self.request.retries, len(RETRY_COUNTDOWNS) - 1)]
                 raise self.retry(exc=exc, countdown=countdown)
 
             # The retry chain is exhausted, but the subscription survives
             # unless failures have been sustained.
-            if (webhook.consecutive_failures or 0) >= MAX_CONSECUTIVE_FAILURES:
-                webhook.is_active = False
-            db.commit()
+            if consecutive >= MAX_CONSECUTIVE_FAILURES:
+                db.webhooks.record_attempt(
+                    webhook.id,
+                    retry_count=attempt_number,
+                    consecutive_failures=consecutive,
+                    last_triggered_at=datetime.now(timezone.utc),
+                    is_active=False,
+                )
             return {
                 "success": False,
                 "status_code": status_code,
                 "attempt": attempt_number,
-                "consecutive_failures": webhook.consecutive_failures,
+                "consecutive_failures": consecutive,
             }
 
         _record_attempt(
@@ -212,17 +210,25 @@ def dispatch_webhook(self, webhook_id: str, payload: dict) -> dict:
             success=True,
             error_message=None,
         )
-        db.commit()
+        db.webhooks.record_attempt(
+            webhook.id,
+            retry_count=0,
+            consecutive_failures=0,
+            last_triggered_at=datetime.now(timezone.utc),
+        )
         return {
             "success": True,
             "status_code": status_code,
             "attempt": attempt_number,
         }
     except MaxRetriesExceededError:
-        webhook = db.get(Webhook, webhook_pk)
+        webhook = db.webhooks.get_by_id(webhook_pk)
         if webhook is not None:
-            webhook.is_active = False
-            db.commit()
+            db.webhooks.record_attempt(
+                webhook.id,
+                retry_count=attempt_number,
+                consecutive_failures=(webhook.consecutive_failures or 0) + 1,
+                last_triggered_at=datetime.now(timezone.utc),
+                is_active=False,
+            )
         return {"success": False, "error": "Max retries exceeded"}
-    finally:
-        db.close()

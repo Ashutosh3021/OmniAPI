@@ -2,13 +2,12 @@
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, text
-from sqlalchemy.orm import Session
 
+from app.db.database import Database
 from app.models.api_key import APIKey
 from app.models.user import User
 
@@ -40,22 +39,20 @@ def _is_expired(api_key: APIKey) -> bool:
     return expires_at < datetime.now(timezone.utc)
 
 
-def lookup_api_key(raw_key: str, db: Session) -> Optional[APIKey]:
+def lookup_api_key(raw_key: str, db: Database) -> Optional[APIKey]:
     """Find an active, unexpired API key by its raw value."""
     if not raw_key or not raw_key.startswith(API_KEY_PREFIX):
         return None
-    api_key = db.scalar(
-        select(APIKey).where(
-            APIKey.key_hash == hash_api_key(raw_key),
-            APIKey.is_active.is_(True),
-        )
-    )
-    if api_key is None or _is_expired(api_key):
+    found = db.api_keys.find_active_by_hash(hash_api_key(raw_key))
+    if found is None:
+        return None
+    api_key, _owner = found
+    if _is_expired(api_key):
         return None
     return api_key
 
 
-def validate_api_key(raw_key: str, db: Session) -> User:
+def validate_api_key(raw_key: str, db: Database) -> User:
     """
     Look up an API key, verify it, and return the owning user.
 
@@ -65,26 +62,35 @@ def validate_api_key(raw_key: str, db: Session) -> User:
     return user
 
 
-def validate_api_key_with_record(
-    raw_key: str, db: Session
-) -> Tuple[User, Optional[APIKey]]:
+def validate_api_key_with_record(raw_key: str, db: Database) -> Tuple[User, Optional[APIKey]]:
     """
     Look up an API key, verify it, and return the owning user and the key.
 
-    Returning the key record lets the caller reuse it (for the rate-limit
-    bucket) instead of querying for it a second time.
-
-    Raises HTTPException 401 if the key is invalid or expired.
+    The owner is joined in the same statement, so authenticating a request
+    costs a single round trip to the data store. Returning the key record
+    lets the caller reuse it instead of querying for it again.
     """
-    api_key = lookup_api_key(raw_key, db)
-    if api_key is None:
+    if not raw_key or not raw_key.startswith(API_KEY_PREFIX):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
 
-    user = db.get(User, api_key.user_id)
-    if user is None or not user.is_active:
+    found = db.api_keys.find_active_by_hash(hash_api_key(raw_key))
+    if found is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+        )
+
+    api_key, user = found
+    if _is_expired(api_key):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key has expired",
+        )
+
+    if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
@@ -94,26 +100,8 @@ def validate_api_key_with_record(
     return user, api_key
 
 
-def _touch_last_used(api_key: APIKey, db: Session) -> None:
+def _touch_last_used(api_key: APIKey, db: Database) -> None:
     """Record usage of a key without putting a write on every request."""
     now = datetime.now(timezone.utc)
-    threshold = now - timedelta(seconds=LAST_USED_WRITE_INTERVAL_SECONDS)
-
-    last_used = api_key.last_used_at
-    if last_used is not None:
-        if last_used.tzinfo is None:
-            last_used = last_used.replace(tzinfo=timezone.utc)
-        if last_used >= threshold:
-            return
-
-    # A single conditional UPDATE: no read, no row lock, and concurrent
-    # requests cannot pile up writes for the same key.
-    db.execute(
-        text(
-            "UPDATE api_keys SET last_used_at = :now "
-            "WHERE id = :id AND (last_used_at IS NULL OR last_used_at < :threshold)"
-        ),
-        {"now": now, "id": api_key.id, "threshold": threshold},
-    )
+    db.api_keys.touch_last_used(api_key.id, now)
     api_key.last_used_at = now
-    db.commit()
